@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Deepfake Detector</title>
+
+<style>
+body {
+    font-family: Arial;
+    background: #0f172a;
+    color: white;
+    text-align: center;
+    padding: 30px;
+}
+
+.container {
+    max-width: 700px;
+    margin: auto;
+    background: #1e293b;
+    padding: 20px;
+    border-radius: 15px;
+}
+
+input, button {
+    width: 100%;
+    padding: 10px;
+    margin-top: 10px;
+}
+
+button {
+    background: #3b82f6;
+    color: white;
+    border: none;
+    cursor: pointer;
+}
+
+button:hover {
+    background: #2563eb;
+}
+
+.result {
+    margin-top: 20px;
+    padding: 15px;
+    background: #111827;
+    border-radius: 10px;
+    text-align: left;
+    white-space: pre-wrap;
+}
+</style>
+</head>
+
+<body>
+
+<div class="container">
+
+<h2>🔍 Deepfake Detection</h2>
+
+<input type="text" id="textInput" placeholder="Enter Arabic text"/>
+
+<input type="file" id="imageInput" />
+
+<button onclick="sendData()">Detect</button>
+
+<div class="result" id="result">Result will appear here...</div>
+
+</div>
+
+<script>
+
+const API_BASE = "/api"; 
+// مهم: ده بيعدي على nginx
+
+async function sendData() {
+
+    const text = document.getElementById("textInput").value;
+    const image = document.getElementById("imageInput").files[0];
+    const resultBox = document.getElementById("result");
+
+    if (!text && !image) {
+        alert("Enter text or image");
+        return;
+    }
+
+    const formData = new FormData();
+
+    // مهم: backend عندك مستني الاثنين
+    formData.append("text", text || "");
+
+    if (image) {
+        formData.append("image", image);
+    } else {
+        // لازم نبعث فاضي file عشان FastAPI File(...)
+        formData.append("image", new Blob([]));
+    }
+
+    resultBox.innerText = "Processing...";
+
+    try {
+        const res = await fetch(`${API_BASE}/detect`, {
+            method: "POST",
+            body: formData
+        });
+
+        // مهم جدًا: نتأكد الرد JSON
+        const contentType = res.headers.get("content-type");
+
+        if (!res.ok) {
+            const errText = await res.text();
+            throw new Error(errText);
+        }
+
+        let data;
+
+        if (contentType && contentType.includes("application/json")) {
+            data = await res.json();
+        } else {
+            const text = await res.text();
+            throw new Error("Not JSON response: " + text);
+        }
+
+        resultBox.innerText = JSON.stringify(data, null, 2);
+
+    } catch (err) {
+        resultBox.innerText = "❌ Error:\n" + err.message;
+    }
+}
+
+</script>
+
+</body>
+</html>
