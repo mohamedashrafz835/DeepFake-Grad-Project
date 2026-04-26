@@ -1,0 +1,74 @@
+version: "3.9"
+
+services:
+
+  # ─────────────────────────────────────────
+  # Frontend  (React / HTML static site)
+  # ─────────────────────────────────────────
+  frontend:
+    build:
+      context: ./Frontend
+      dockerfile: Dockerfile
+    container_name: deepfake-frontend
+    ports:
+      - "3000:80"          # adjust if your frontend runs on a different port
+    depends_on:
+      - api-gateway
+    networks:
+      - deepfake-net
+    restart: unless-stopped
+
+  # ─────────────────────────────────────────
+  # API Gateway  (Flask / FastAPI)
+  # ─────────────────────────────────────────
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    container_name: deepfake-api-gateway
+    ports:
+      - "5000:5000"        # adjust to whatever port your gateway exposes
+    environment:
+      - TEXT_SERVICE_URL=http://text-service:5001
+      - IMAGE_SERVICE_URL=http://image-service:5002
+    depends_on:
+      - text-service
+      - image-service
+    networks:
+      - deepfake-net
+    restart: unless-stopped
+
+  # ─────────────────────────────────────────
+  # Text Service  (NLP / BERT model)
+  # ─────────────────────────────────────────
+  text-service:
+    build:
+      context: ./Text_Service
+      dockerfile: Dockerfile
+    container_name: deepfake-text-service
+    ports:
+      - "5001:5001"        # adjust to the port your text service listens on
+    networks:
+      - deepfake-net
+    restart: unless-stopped
+
+  # ─────────────────────────────────────────
+  # Image Service  (CV / deep-learning model)
+  # ─────────────────────────────────────────
+  image-service:
+    build:
+      context: ./Image_service
+      dockerfile: Dockerfile
+    container_name: deepfake-image-service
+    ports:
+      - "5002:5002"        # adjust to the port your image service listens on
+    networks:
+      - deepfake-net
+    restart: unless-stopped
+
+# ─────────────────────────────────────────
+# Shared network — containers talk by name
+# ─────────────────────────────────────────
+networks:
+  deepfake-net:
+    driver: bridge
