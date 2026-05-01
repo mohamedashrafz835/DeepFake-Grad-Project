@@ -6,3 +6,5 @@ pillow
 numpy
 gdown
 python-multipart
+opencv-python-headless
+grad-cam
