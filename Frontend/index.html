@@ -22,7 +22,7 @@ body {
     border-radius: 15px;
 }
 
-input, button {
+input, button, select {
     width: 100%;
     padding: 10px;
     margin-top: 10px;
@@ -47,6 +47,26 @@ button:hover {
     text-align: left;
     white-space: pre-wrap;
 }
+
+img.preview {
+    margin-top: 10px;
+    max-width: 100%;
+    border-radius: 10px;
+}
+
+.mode-group {
+    display: flex;
+    gap: 10px;
+}
+
+.mode-group button {
+    flex: 1;
+    background: #334155;
+}
+
+.mode-group button.active {
+    background: #22c55e;
+}
 </style>
 </head>
 
@@ -58,24 +78,78 @@ button:hover {
 
 <input type="text" id="textInput" placeholder="Enter Arabic text"/>
 
-<input type="file" id="imageInput" />
+<!-- TEXT MODE -->
+<p>Text Mode:</p>
+<div class="mode-group">
+    <button id="textDetectBtn" onclick="setMode('text','detect')">Detect</button>
+    <button id="textExplainBtn" onclick="setMode('text','explain')">Explain</button>
+</div>
+
+<!-- IMAGE -->
+<input type="file" id="imageInput" onchange="previewImage()" />
+
+<img id="imagePreview" class="preview" style="display:none;" />
+
+<!-- IMAGE MODE -->
+<p>Image Mode:</p>
+<div class="mode-group">
+    <button id="imgDetectBtn" onclick="setMode('image','detect')">Detect</button>
+    <button id="imgExplainBtn" onclick="setMode('image','explain')">Explain</button>
+</div>
 
 <button onclick="sendData()">Detect</button>
 
 <div class="result" id="result">Result will appear here...</div>
 
+<!-- GradCAM -->
+<img id="gradcamImage" class="preview" style="display:none;" />
+
 </div>
 
 <script>
 
-const API_BASE = "/api"; 
-// مهم: ده بيعدي على nginx
+const API_BASE = "/api";
 
+let textMode = "detect";
+let imageMode = "detect";
+
+// =====================
+// Mode selection
+// =====================
+function setMode(type, mode) {
+    if (type === "text") {
+        textMode = mode;
+        document.getElementById("textDetectBtn").classList.toggle("active", mode==="detect");
+        document.getElementById("textExplainBtn").classList.toggle("active", mode==="explain");
+    } else {
+        imageMode = mode;
+        document.getElementById("imgDetectBtn").classList.toggle("active", mode==="detect");
+        document.getElementById("imgExplainBtn").classList.toggle("active", mode==="explain");
+    }
+}
+
+// =====================
+// Image Preview
+// =====================
+function previewImage() {
+    const file = document.getElementById("imageInput").files[0];
+    const preview = document.getElementById("imagePreview");
+
+    if (file) {
+        preview.src = URL.createObjectURL(file);
+        preview.style.display = "block";
+    }
+}
+
+// =====================
+// Send Data
+// =====================
 async function sendData() {
 
     const text = document.getElementById("textInput").value;
     const image = document.getElementById("imageInput").files[0];
     const resultBox = document.getElementById("result");
+    const gradcam = document.getElementById("gradcamImage");
 
     if (!text && !image) {
         alert("Enter text or image");
@@ -84,17 +158,20 @@ async function sendData() {
 
     const formData = new FormData();
 
-    // مهم: backend عندك مستني الاثنين
     formData.append("text", text || "");
 
     if (image) {
         formData.append("image", image);
     } else {
-        // لازم نبعث فاضي file عشان FastAPI File(...)
         formData.append("image", new Blob([]));
     }
 
+    // 🔥 important
+    formData.append("text_explain", textMode === "explain" ? "true" : "false");
+    formData.append("image_explain", imageMode === "explain" ? "true" : "false");
+
     resultBox.innerText = "Processing...";
+    gradcam.style.display = "none";
 
     try {
         const res = await fetch(`${API_BASE}/detect`, {
@@ -102,24 +179,21 @@ async function sendData() {
             body: formData
         });
 
-        // مهم جدًا: نتأكد الرد JSON
-        const contentType = res.headers.get("content-type");
+        const data = await res.json();
 
-        if (!res.ok) {
-            const errText = await res.text();
-            throw new Error(errText);
-        }
-
-        let data;
-
-        if (contentType && contentType.includes("application/json")) {
-            data = await res.json();
-        } else {
-            const text = await res.text();
-            throw new Error("Not JSON response: " + text);
-        }
-
+        // عرض JSON
         resultBox.innerText = JSON.stringify(data, null, 2);
+
+        // =====================
+        // Show GradCAM image
+        // =====================
+        if (data.image_result && data.image_result.explanation) {
+
+            const base64 = data.image_result.explanation;
+
+            gradcam.src = "data:image/jpeg;base64," + base64;
+            gradcam.style.display = "block";
+        }
 
     } catch (err) {
         resultBox.innerText = "❌ Error:\n" + err.message;
