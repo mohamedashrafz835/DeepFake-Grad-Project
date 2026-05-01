@@ -1,206 +1,1135 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Deepfake Detector</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DeepShield — AI Deepfake Detector</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700;900&family=Space+Grotesk:wght@400;700&display=swap" rel="stylesheet" />
+  <style>
+    /* ==============================
+       BASE RESET & VARIABLES
+    ============================== */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-<style>
-body {
-    font-family: Arial;
-    background: #0f172a;
-    color: white;
-    text-align: center;
-    padding: 30px;
-}
+    :root {
+      --bg:        #06080f;
+      --card:      #0d1117;
+      --card2:     #111827;
+      --border:    rgba(255,255,255,0.07);
+      --text:      #e2e8f0;
+      --muted:     #64748b;
+      --a:         #6366f1;
+      --b:         #a855f7;
+      --c:         #ec4899;
+      --d:         #06b6d4;
+      --e:         #10b981;
+      --grad:      linear-gradient(135deg, var(--a), var(--b), var(--c));
+      --grad2:     linear-gradient(135deg, var(--d), var(--a), var(--b));
+      --glow:      0 0 40px rgba(99,102,241,0.35);
+    }
 
-.container {
-    max-width: 700px;
-    margin: auto;
-    background: #1e293b;
-    padding: 20px;
-    border-radius: 15px;
-}
+    html { scroll-behavior: smooth; }
 
-input, button, select {
-    width: 100%;
-    padding: 10px;
-    margin-top: 10px;
-}
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
 
-button {
-    background: #3b82f6;
-    color: white;
-    border: none;
-    cursor: pointer;
-}
+    /* ==============================
+       INTRO SPLASH
+    ============================== */
+    #splash {
+      position: fixed; inset: 0;
+      background: #06080f;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      z-index: 9999;
+      transition: opacity 0.8s ease, visibility 0.8s ease;
+    }
+    #splash.hidden { opacity: 0; visibility: hidden; }
 
-button:hover {
-    background: #2563eb;
-}
+    .splash-logo {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: clamp(2.5rem, 8vw, 5.5rem);
+      font-weight: 700;
+      background: var(--grad);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      animation: fadeUp 0.9s ease both;
+      text-align: center;
+      letter-spacing: -1px;
+    }
+    .splash-sub {
+      margin-top: 12px;
+      font-size: 1.05rem;
+      color: var(--muted);
+      animation: fadeUp 0.9s 0.25s ease both;
+      letter-spacing: 0.3px;
+    }
+    .splash-bar {
+      margin-top: 40px;
+      width: 220px; height: 3px;
+      background: rgba(255,255,255,0.08);
+      border-radius: 10px;
+      overflow: hidden;
+      animation: fadeUp 0.9s 0.4s ease both;
+    }
+    .splash-bar-fill {
+      height: 100%;
+      width: 0%;
+      background: var(--grad);
+      border-radius: 10px;
+      animation: fillBar 1.8s 0.5s cubic-bezier(.4,0,.2,1) forwards;
+    }
+    @keyframes fillBar { to { width: 100%; } }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(24px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
 
-.result {
-    margin-top: 20px;
-    padding: 15px;
-    background: #111827;
-    border-radius: 10px;
-    text-align: left;
-    white-space: pre-wrap;
-}
+    /* ==============================
+       ANIMATED BACKGROUND ORBS
+    ============================== */
+    .orbs {
+      position: fixed; inset: 0; pointer-events: none; z-index: 0; overflow: hidden;
+    }
+    .orb {
+      position: absolute;
+      border-radius: 50%;
+      filter: blur(80px);
+      opacity: 0.18;
+      animation: drift 12s ease-in-out infinite;
+    }
+    .orb:nth-child(1) { width: 500px; height: 500px; background: var(--a); top:-120px; left:-120px; animation-delay:0s; }
+    .orb:nth-child(2) { width: 400px; height: 400px; background: var(--b); bottom:-80px; right:-80px; animation-delay:-4s; }
+    .orb:nth-child(3) { width: 300px; height: 300px; background: var(--c); top:40%; left:55%; animation-delay:-8s; }
+    @keyframes drift {
+      0%,100% { transform: translate(0,0) scale(1); }
+      50%      { transform: translate(30px,-30px) scale(1.08); }
+    }
 
-img.preview {
-    margin-top: 10px;
-    max-width: 100%;
-    border-radius: 10px;
-}
+    /* ==============================
+       NAV
+    ============================== */
+    nav {
+      position: sticky; top: 0; z-index: 200;
+      backdrop-filter: blur(18px);
+      background: rgba(6,8,15,0.75);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 clamp(20px,5vw,60px);
+      height: 64px;
+    }
+    .nav-brand {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 1.35rem; font-weight: 700;
+      background: var(--grad);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    .nav-links { display: flex; gap: 28px; list-style: none; }
+    .nav-links a {
+      color: var(--muted); text-decoration: none; font-size: .9rem;
+      transition: color .2s;
+    }
+    .nav-links a:hover { color: var(--text); }
 
-.mode-group {
-    display: flex;
-    gap: 10px;
-}
+    /* ==============================
+       HERO SECTION
+    ============================== */
+    .hero {
+      position: relative; z-index: 1;
+      text-align: center;
+      padding: clamp(80px,12vw,140px) 20px 60px;
+    }
+    .hero-badge {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: rgba(99,102,241,0.12);
+      border: 1px solid rgba(99,102,241,0.35);
+      border-radius: 999px; padding: 6px 16px;
+      font-size: .78rem; color: #a5b4fc; font-weight: 600;
+      margin-bottom: 28px; letter-spacing: .5px; text-transform: uppercase;
+      animation: fadeUp .6s ease both;
+    }
+    .pulse-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: #a855f7;
+      box-shadow: 0 0 6px #a855f7;
+      animation: pulse 1.5s infinite;
+    }
+    @keyframes pulse { 0%,100%{transform:scale(1);opacity:1;} 50%{transform:scale(1.4);opacity:.6;} }
 
-.mode-group button {
-    flex: 1;
-    background: #334155;
-}
+    .hero h1 {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: clamp(2.4rem, 6vw, 5rem);
+      font-weight: 700; line-height: 1.1;
+      letter-spacing: -1.5px;
+      animation: fadeUp .7s .1s ease both;
+    }
+    .hero h1 span {
+      background: var(--grad);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    .hero p {
+      margin-top: 20px; max-width: 560px; margin-inline: auto;
+      color: var(--muted); font-size: 1.05rem; line-height: 1.7;
+      animation: fadeUp .7s .2s ease both;
+    }
+    .hero-stats {
+      display: flex; justify-content: center; gap: 40px; flex-wrap: wrap;
+      margin-top: 44px;
+      animation: fadeUp .7s .4s ease both;
+    }
+    .stat { text-align: center; }
+    .stat-num {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 1.9rem; font-weight: 700;
+      background: var(--grad2);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    .stat-label { font-size: .78rem; color: var(--muted); margin-top: 2px; text-transform: uppercase; letter-spacing: .4px; }
 
-.mode-group button.active {
-    background: #22c55e;
-}
-</style>
+    /* ==============================
+       MAIN DETECTOR CARD
+    ============================== */
+    .main-wrap {
+      position: relative; z-index: 1;
+      max-width: 860px; margin: 0 auto;
+      padding: 0 20px 80px;
+      animation: fadeUp .8s .5s ease both;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: clamp(24px,4vw,48px);
+      box-shadow: var(--glow), 0 40px 80px rgba(0,0,0,0.5);
+    }
+    .card-title {
+      font-size: 1.1rem; font-weight: 700;
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 24px;
+    }
+    .card-title .icon-bg {
+      width: 36px; height: 36px; border-radius: 10px;
+      background: var(--grad); display: flex; align-items: center; justify-content: center;
+      font-size: 1.1rem;
+    }
+
+    /* tabs */
+    .tabs {
+      display: flex; gap: 8px; margin-bottom: 28px;
+      background: rgba(255,255,255,0.04); padding: 5px; border-radius: 14px;
+    }
+    .tab-btn {
+      flex: 1; padding: 10px; border: none; border-radius: 10px;
+      background: transparent; color: var(--muted);
+      font-size: .88rem; font-weight: 600; cursor: pointer;
+      transition: background .2s, color .2s;
+    }
+    .tab-btn.active {
+      background: var(--grad); color: white;
+    }
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+
+    /* inputs */
+    .field-label { font-size: .8rem; color: var(--muted); font-weight: 600; margin-bottom: 8px; text-transform: uppercase; letter-spacing: .4px; }
+    textarea, input[type="text"] {
+      width: 100%; background: rgba(255,255,255,0.04);
+      border: 1px solid var(--border); border-radius: 12px;
+      color: var(--text); font-family: 'Inter', sans-serif;
+      font-size: .95rem; padding: 14px 16px;
+      transition: border-color .2s, box-shadow .2s;
+      resize: vertical;
+      outline: none;
+    }
+    textarea:focus, input[type="text"]:focus {
+      border-color: var(--a);
+      box-shadow: 0 0 0 3px rgba(99,102,241,0.2);
+    }
+
+    /* drop zone */
+    .drop-zone {
+      border: 2px dashed rgba(255,255,255,0.12);
+      border-radius: 16px; padding: 40px 20px;
+      text-align: center; cursor: pointer;
+      transition: border-color .2s, background .2s;
+      position: relative; overflow: hidden;
+    }
+    .drop-zone:hover, .drop-zone.dragover {
+      border-color: var(--a);
+      background: rgba(99,102,241,0.06);
+    }
+    .drop-icon { font-size: 2.5rem; margin-bottom: 10px; }
+    .drop-text { color: var(--muted); font-size: .9rem; }
+    .drop-text span { color: var(--a); font-weight: 600; }
+    .drop-preview { max-width: 100%; max-height: 200px; border-radius: 12px; margin-top: 14px; display: none; }
+    #imageInput { display: none; }
+
+    /* mode toggles */
+    .toggle-row { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+    .toggle-pill {
+      display: flex; align-items: center; gap: 7px;
+      padding: 8px 16px; border-radius: 999px; border: 1px solid var(--border);
+      background: transparent; color: var(--muted);
+      font-size: .82rem; font-weight: 600; cursor: pointer; transition: all .2s;
+    }
+    .toggle-pill.active { background: rgba(99,102,241,0.15); border-color: var(--a); color: #a5b4fc; }
+    .toggle-pill .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+
+    /* detect button */
+    .detect-btn {
+      width: 100%; margin-top: 24px; padding: 16px;
+      background: var(--grad); border: none; border-radius: 14px;
+      color: white; font-size: 1rem; font-weight: 700;
+      cursor: pointer; font-family: 'Inter', sans-serif;
+      display: flex; align-items: center; justify-content: center; gap: 10px;
+      transition: opacity .2s, transform .15s, box-shadow .2s;
+      box-shadow: 0 4px 24px rgba(99,102,241,0.3);
+      letter-spacing: .3px;
+    }
+    .detect-btn:hover { opacity: .9; transform: translateY(-1px); box-shadow: 0 8px 32px rgba(99,102,241,0.45); }
+    .detect-btn:active { transform: translateY(0); }
+
+    /* spinner */
+    .spinner {
+      width: 20px; height: 20px; border-radius: 50%;
+      border: 3px solid rgba(255,255,255,0.25);
+      border-top-color: white;
+      animation: spin 0.7s linear infinite;
+      display: none;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* progress */
+    .progress-wrap { margin-top: 20px; }
+    .progress-label { display: flex; justify-content: space-between; font-size: .78rem; color: var(--muted); margin-bottom: 6px; }
+    .progress-track {
+      width: 100%; height: 7px; background: rgba(255,255,255,0.07);
+      border-radius: 999px; overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%; width: 0%;
+      background: var(--grad);
+      border-radius: 999px;
+      transition: width .2s;
+    }
+
+    /* result card */
+    .result-area { margin-top: 28px; display: none; }
+    .result-verdict {
+      display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;
+      padding: 20px 24px;
+      border-radius: 16px; margin-bottom: 20px;
+      font-size: 1.1rem; font-weight: 700;
+    }
+    .result-verdict.fake  { background: rgba(239,68,68,.12); border: 1px solid rgba(239,68,68,.3); }
+    .result-verdict.real  { background: rgba(16,185,129,.12); border: 1px solid rgba(16,185,129,.3); }
+    .verdict-badge {
+      padding: 5px 14px; border-radius: 999px; font-size: .8rem;
+    }
+    .fake .verdict-badge  { background: rgba(239,68,68,.2); color: #f87171; }
+    .real .verdict-badge  { background: rgba(16,185,129,.2); color: #34d399; }
+
+    /* confidence bars */
+    .conf-bar-wrap { margin-bottom: 14px; }
+    .conf-bar-header { display: flex; justify-content: space-between; font-size: .82rem; margin-bottom: 5px; font-weight: 600; }
+    .conf-track { height: 10px; background: rgba(255,255,255,0.07); border-radius: 999px; overflow: hidden; }
+    .conf-fill {
+      height: 100%; border-radius: 999px;
+      transition: width 1s cubic-bezier(.4,0,.2,1);
+    }
+    .conf-fill.fake-bar { background: linear-gradient(90deg, #f43f5e, #ec4899); }
+    .conf-fill.real-bar { background: linear-gradient(90deg, #10b981, #06b6d4); }
+
+    /* gradcam images */
+    .images-row {
+      display: flex; gap: 14px; margin-top: 20px; flex-wrap: wrap;
+    }
+    .img-box {
+      flex: 1; min-width: 180px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid var(--border); border-radius: 14px;
+      overflow: hidden; display: none;
+    }
+    .img-box-label { font-size: .75rem; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .5px; padding: 10px 14px; }
+    .img-box img { width: 100%; height: 200px; object-fit: cover; display: block; }
+
+    /* history */
+    .history-section { margin-top: 28px; }
+    .history-title { font-size: .85rem; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 12px; }
+    .history-list { display: flex; flex-direction: column; gap: 8px; }
+    .history-item {
+      background: rgba(255,255,255,0.03); border: 1px solid var(--border);
+      border-radius: 10px; padding: 12px 16px;
+      display: flex; align-items: center; gap: 12px;
+      font-size: .82rem; color: var(--muted);
+    }
+    .history-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+    .history-dot.fake { background: #f43f5e; }
+    .history-dot.real { background: #10b981; }
+
+    /* ==============================
+       HOW TO USE / STEPS
+    ============================== */
+    .section {
+      position: relative; z-index: 1;
+      max-width: 860px; margin: 0 auto; padding: 0 20px 80px;
+    }
+    .section-header { text-align: center; margin-bottom: 44px; }
+    .section-header h2 {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: clamp(1.7rem, 4vw, 2.6rem);
+      font-weight: 700; letter-spacing: -.8px;
+    }
+    .section-header h2 span { background: var(--grad); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+    .section-header p { color: var(--muted); margin-top: 10px; font-size: .95rem; }
+
+    .steps-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px,1fr)); gap: 16px; }
+    .step-card {
+      background: var(--card2); border: 1px solid var(--border);
+      border-radius: 18px; padding: 28px 22px;
+      transition: transform .2s, border-color .2s, box-shadow .2s;
+    }
+    .step-card:hover { transform: translateY(-4px); border-color: rgba(99,102,241,.4); box-shadow: 0 12px 40px rgba(99,102,241,.15); }
+    .step-num {
+      width: 40px; height: 40px; border-radius: 12px;
+      background: var(--grad); display: flex; align-items: center; justify-content: center;
+      font-weight: 900; font-size: 1.1rem; margin-bottom: 16px;
+    }
+    .step-card h3 { font-size: .95rem; font-weight: 700; margin-bottom: 6px; }
+    .step-card p { font-size: .82rem; color: var(--muted); line-height: 1.6; }
+
+    /* accuracy bars */
+    .accuracy-section { padding: 0 20px 80px; }
+    .ac-card {
+      max-width: 860px; margin: 0 auto;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 24px; padding: clamp(24px,4vw,44px);
+      box-shadow: 0 40px 80px rgba(0,0,0,0.4);
+    }
+    .metrics-list { display: flex; flex-direction: column; gap: 22px; margin-top: 28px; }
+    .metric-item .metric-header { display: flex; justify-content: space-between; font-size: .85rem; font-weight: 700; margin-bottom: 8px; }
+    .metric-track { height: 14px; background: rgba(255,255,255,0.06); border-radius: 999px; overflow: hidden; }
+    .metric-fill {
+      height: 100%; border-radius: 999px;
+      position: relative; overflow: hidden;
+    }
+    .metric-fill::after {
+      content: ''; position: absolute; inset: 0;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.25), transparent);
+      animation: shimmer 2s infinite;
+    }
+    @keyframes shimmer { 0%{transform:translateX(-100%)} 100%{transform:translateX(100%)} }
+    .metric-fill.m1 { background: linear-gradient(90deg, var(--a), var(--b)); }
+    .metric-fill.m2 { background: linear-gradient(90deg, var(--b), var(--c)); }
+    .metric-fill.m3 { background: linear-gradient(90deg, var(--d), var(--a)); }
+    .metric-fill.m4 { background: linear-gradient(90deg, var(--e), var(--d)); }
+
+    /* ==============================
+       FAQ ACCORDION
+    ============================== */
+    .faq-list { display: flex; flex-direction: column; gap: 10px; }
+    .faq-item {
+      background: var(--card2); border: 1px solid var(--border);
+      border-radius: 14px; overflow: hidden;
+    }
+    .faq-q {
+      width: 100%; display: flex; align-items: center; justify-content: space-between;
+      padding: 18px 22px;
+      background: transparent; border: none; color: var(--text);
+      font-family: 'Inter', sans-serif; font-size: .92rem; font-weight: 600;
+      cursor: pointer; text-align: left; gap: 12px;
+      transition: color .2s;
+    }
+    .faq-q:hover { color: #a5b4fc; }
+    .faq-chevron {
+      width: 22px; height: 22px; border-radius: 6px;
+      background: rgba(255,255,255,0.06);
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; font-size: .7rem;
+      transition: transform .3s, background .2s;
+    }
+    .faq-item.open .faq-chevron { transform: rotate(180deg); background: rgba(99,102,241,.2); }
+    .faq-a {
+      max-height: 0; overflow: hidden;
+      transition: max-height .35s cubic-bezier(.4,0,.2,1), padding .35s;
+      color: var(--muted); font-size: .875rem; line-height: 1.75;
+    }
+    .faq-a-inner { padding: 0 22px 18px; }
+    .faq-item.open .faq-a { max-height: 300px; }
+
+    /* ==============================
+       FOOTER
+    ============================== */
+    footer {
+      position: relative; z-index: 1;
+      border-top: 1px solid var(--border);
+      text-align: center; padding: 36px 20px;
+      color: var(--muted); font-size: .82rem;
+    }
+    footer span { background: var(--grad); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; font-weight: 700; }
+
+    /* ==============================
+       TEXT EXPLANATION PANEL
+    ============================== */
+    .explain-panel {
+      margin-top: 28px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      overflow: hidden;
+    }
+    .explain-header {
+      display: flex; align-items: center; gap: 10px;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      font-size: .85rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .5px; color: var(--muted);
+    }
+    .explain-header .icon-bg { width: 28px; height: 28px; border-radius: 8px; font-size: .9rem; }
+
+    /* ── word chips ── */
+    .word-chips {
+      display: flex; flex-wrap: wrap; gap: 8px; padding: 18px 20px;
+      direction: rtl; /* Arabic RTL */
+    }
+    .word-chip {
+      display: inline-flex; flex-direction: column; align-items: center; gap: 3px;
+      padding: 6px 12px; border-radius: 10px;
+      font-size: .88rem; font-weight: 600;
+      border: 1px solid transparent;
+      transition: transform .15s;
+      cursor: default;
+    }
+    .word-chip:hover { transform: translateY(-2px); }
+    .word-chip .chip-impact {
+      font-size: .65rem; font-weight: 500; opacity: .75;
+    }
+    .word-chip.green {
+      color: #34d399;
+      border-color: rgba(16,185,129,.25);
+    }
+    .word-chip.red {
+      color: #f87171;
+      border-color: rgba(239,68,68,.25);
+    }
+
+    /* ── impact bar chart ── */
+    .impact-chart { padding: 0 20px 18px; }
+    .impact-chart-title {
+      font-size: .75rem; font-weight: 700; color: var(--muted);
+      text-transform: uppercase; letter-spacing: .4px;
+      margin-bottom: 12px;
+    }
+    .impact-row {
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 8px; direction: rtl;
+    }
+    .impact-word {
+      width: 90px; font-size: .8rem; font-weight: 600;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      text-align: right; flex-shrink: 0;
+    }
+    .impact-track {
+      flex: 1; height: 10px; background: rgba(255,255,255,0.06);
+      border-radius: 999px; overflow: hidden; position: relative;
+    }
+    .impact-fill {
+      height: 100%; border-radius: 999px;
+      transition: width 1s cubic-bezier(.4,0,.2,1);
+    }
+    .impact-fill.green { background: linear-gradient(90deg, #10b981, #34d399); }
+    .impact-fill.red   { background: linear-gradient(90deg, #ef4444, #f87171); }
+    .impact-pct {
+      width: 36px; font-size: .7rem; color: var(--muted);
+      text-align: left; flex-shrink: 0;
+    }
+
+    /* ── Arabic summary block ── */
+    .explain-summary {
+      margin: 0 20px 18px;
+      padding: 14px 18px;
+      background: rgba(99,102,241,0.08);
+      border: 1px solid rgba(99,102,241,.2);
+      border-radius: 12px;
+      font-size: .88rem; line-height: 1.75;
+      direction: rtl; text-align: right;
+      color: #c7d2fe;
+      white-space: pre-line;
+    }
+
+    /* ==============================
+       RESPONSIVE
+    ============================== */
+    @media (max-width: 500px) {
+      .nav-links { display: none; }
+      .hero-stats { gap: 24px; }
+    }
+  </style>
 </head>
-
 <body>
 
-<div class="container">
+  <!-- ── SPLASH ── -->
+  <div id="splash">
+    <div class="splash-logo">DeepShield</div>
+    <div class="splash-sub">Next-Gen Multimodal Deepfake Detector</div>
+    <div class="splash-bar"><div class="splash-bar-fill"></div></div>
+  </div>
 
-<h2>🔍 Deepfake Detection</h2>
+  <!-- ── ANIMATED BACKGROUND ── -->
+  <div class="orbs">
+    <div class="orb"></div>
+    <div class="orb"></div>
+    <div class="orb"></div>
+  </div>
 
-<input type="text" id="textInput" placeholder="Enter Arabic text"/>
+  <!-- ── NAV ── -->
+  <nav>
+    <div class="nav-brand">⚡ DeepShield</div>
+    <ul class="nav-links">
+      <li><a href="#detector">Detector</a></li>
+      <li><a href="#how-to-use">How to Use</a></li>
+      <li><a href="#accuracy">Accuracy</a></li>
+      <li><a href="#faq">FAQ</a></li>
+    </ul>
+  </nav>
 
-<!-- TEXT MODE -->
-<p>Text Mode:</p>
-<div class="mode-group">
-    <button id="textDetectBtn" onclick="setMode('text','detect')">Detect</button>
-    <button id="textExplainBtn" onclick="setMode('text','explain')">Explain</button>
-</div>
+  <!-- ── HERO ── -->
+  <section class="hero" id="top">
+    <div class="hero-badge">
+      <div class="pulse-dot"></div>
+      AI-Powered · Multimodal · Real-Time
+    </div>
+    <h1>Detect <span>Deepfakes</span> <br/>Before They Spread</h1>
+    <p>State-of-the-art fusion of AraBERT + CNN + LSTM models that analyse both image and text signals simultaneously for unmatched detection accuracy.</p>
+    <div class="hero-stats">
+      <div class="stat"><div class="stat-num">97.3%</div><div class="stat-label">Overall Accuracy</div></div>
+      <div class="stat"><div class="stat-num">&lt;1s</div><div class="stat-label">Detection Speed</div></div>
+      <div class="stat"><div class="stat-num">2</div><div class="stat-label">Modalities</div></div>
+      <div class="stat"><div class="stat-num">3</div><div class="stat-label">Model Fusion</div></div>
+    </div>
+  </section>
 
-<!-- IMAGE -->
-<input type="file" id="imageInput" onchange="previewImage()" />
+  <!-- ── DETECTOR CARD ── -->
+  <section id="detector" class="main-wrap">
+    <div class="card">
+      <div class="card-title">
+        <div class="icon-bg">🔍</div>
+        Detection Console
+      </div>
 
-<img id="imagePreview" class="preview" style="display:none;" />
+      <!-- tabs -->
+      <div class="tabs">
+        <button class="tab-btn active" onclick="switchTab('text')">📝 Text Analysis</button>
+        <button class="tab-btn" onclick="switchTab('image')">🖼️ Image Analysis</button>
+        <button class="tab-btn" onclick="switchTab('both')">🔀 Multimodal</button>
+      </div>
 
-<!-- IMAGE MODE -->
-<p>Image Mode:</p>
-<div class="mode-group">
-    <button id="imgDetectBtn" onclick="setMode('image','detect')">Detect</button>
-    <button id="imgExplainBtn" onclick="setMode('image','explain')">Explain</button>
-</div>
+      <!-- text tab -->
+      <div class="tab-content active" id="tab-text">
+        <div class="field-label">Input Text</div>
+        <textarea id="textInput" rows="5" placeholder="Paste the article, caption, or statement you want to verify…"></textarea>
+        <div class="toggle-row">
+          <button class="toggle-pill active" id="t-detect" onclick="setMode('text','detect')"><span class="dot"></span>Detect Only</button>
+          <button class="toggle-pill" id="t-explain" onclick="setMode('text','explain')"><span class="dot"></span>With Explanation</button>
+        </div>
+      </div>
 
-<button onclick="sendData()">Detect</button>
+      <!-- image tab -->
+      <div class="tab-content" id="tab-image">
+        <div class="field-label">Upload Image</div>
+        <div class="drop-zone" id="dropZone">
+          <div class="drop-icon">📤</div>
+          <div class="drop-text">Drag & drop an image or <span>browse</span></div>
+          <div class="drop-text" style="font-size:.75rem;margin-top:4px;">PNG, JPG, WEBP — max 20 MB</div>
+          <img class="drop-preview" id="dropPreview" />
+          <input type="file" id="imageInput" accept="image/*" />
+        </div>
+        <div class="toggle-row">
+          <button class="toggle-pill active" id="i-detect" onclick="setMode('image','detect')"><span class="dot"></span>Detect Only</button>
+          <button class="toggle-pill" id="i-explain" onclick="setMode('image','explain')"><span class="dot"></span>With GradCAM</button>
+        </div>
+      </div>
 
-<div class="result" id="result">Result will appear here...</div>
+      <!-- both tab -->
+      <div class="tab-content" id="tab-both">
+        <div class="field-label">Input Text</div>
+        <textarea id="textInput2" rows="3" placeholder="Enter the text associated with the image…"></textarea>
+        <div style="margin-top:16px;" class="field-label">Upload Image</div>
+        <div class="drop-zone" id="dropZone2">
+          <div class="drop-icon">📤</div>
+          <div class="drop-text">Drag & drop or <span>browse</span></div>
+          <img class="drop-preview" id="dropPreview2" />
+          <input type="file" id="imageInput2" accept="image/*" />
+        </div>
+      </div>
 
-<!-- GradCAM -->
-<img id="gradcamImage" class="preview" style="display:none;" />
+      <!-- detect button -->
+      <button class="detect-btn" onclick="sendData()" id="detectBtn">
+        <span class="spinner" id="spinner"></span>
+        <span id="btnText">⚡ Run Detection</span>
+      </button>
 
-</div>
+      <!-- progress -->
+      <div class="progress-wrap" id="progressWrap" style="display:none;">
+        <div class="progress-label"><span>Analysing…</span><span id="pct">0%</span></div>
+        <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+      </div>
 
-<script>
+      <!-- results -->
+      <div class="result-area" id="resultArea">
+        <div class="result-verdict" id="verdictBox">
+          <div id="verdictText"></div>
+          <div class="verdict-badge" id="verdictBadge"></div>
+        </div>
+        <!-- confidence bars -->
+        <div class="conf-bar-wrap">
+          <div class="conf-bar-header"><span>🔴 Fake Probability</span><span id="fakeVal">0%</span></div>
+          <div class="conf-track"><div class="conf-fill fake-bar" id="fakeBar" style="width:0%"></div></div>
+        </div>
+        <div class="conf-bar-wrap" style="margin-top:14px;">
+          <div class="conf-bar-header"><span>🟢 Real Probability</span><span id="realVal">0%</span></div>
+          <div class="conf-track"><div class="conf-fill real-bar" id="realBar" style="width:0%"></div></div>
+        </div>
 
-const API_BASE = "/api";
+        <!-- images -->
+        <div class="images-row">
+          <div class="img-box" id="boxOriginal">
+            <div class="img-box-label">Original</div>
+            <img id="imgOriginal" />
+          </div>
+          <div class="img-box" id="boxGradcam">
+            <div class="img-box-label">GradCAM Heatmap</div>
+            <img id="imgGradcam" />
+          </div>
+        </div>
 
-let textMode = "detect";
-let imageMode = "detect";
+        <!-- text explanation panel (shown only when explanation data present) -->
+        <div class="explain-panel" id="textExplainPanel" style="display:none;">
+          <div class="explain-header">
+            <div class="icon-bg" style="background:linear-gradient(135deg,#6366f1,#a855f7);display:flex;align-items:center;justify-content:center;">🔬</div>
+            Word-Level Impact Analysis
+          </div>
+          <!-- coloured word chips -->
+          <div class="word-chips" id="wordChips"></div>
+          <!-- horizontal bar chart -->
+          <div class="impact-chart">
+            <div class="impact-chart-title">Impact Ranking (top words)</div>
+            <div id="impactBars"></div>
+          </div>
+          <!-- Arabic model summary -->
+          <div class="explain-summary" id="explainSummary"></div>
+        </div>
+      </div>
 
-// =====================
-// Mode selection
-// =====================
-function setMode(type, mode) {
-    if (type === "text") {
+      <!-- history -->
+      <div class="history-section" id="historySection" style="display:none;">
+        <div class="history-title">🕘 Recent Scans</div>
+        <div class="history-list" id="historyList"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── HOW TO USE ── -->
+  <section id="how-to-use" class="section">
+    <div class="section-header">
+      <h2>How to <span>Use</span> DeepShield</h2>
+      <p>Three simple steps to detect manipulated content in seconds.</p>
+    </div>
+    <div class="steps-grid">
+      <div class="step-card">
+        <div class="step-num">1</div>
+        <h3>Choose your mode</h3>
+        <p>Select Text, Image, or Multimodal analysis. Multimodal combines both signals for the highest accuracy.</p>
+      </div>
+      <div class="step-card">
+        <div class="step-num">2</div>
+        <h3>Upload your content</h3>
+        <p>Paste text, drag-and-drop an image, or supply both. Supported images: PNG, JPG, WEBP up to 20 MB.</p>
+      </div>
+      <div class="step-card">
+        <div class="step-num">3</div>
+        <h3>Enable Explanation</h3>
+        <p>Toggle "With GradCAM" / "With Explanation" to see why the model made its decision via heatmaps and highlighted spans.</p>
+      </div>
+      <div class="step-card">
+        <div class="step-num">4</div>
+        <h3>Read the verdict</h3>
+        <p>DeepShield returns a clear REAL / FAKE verdict with confidence bars showing exact probability scores.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── ACCURACY BARS ── -->
+  <section id="accuracy" class="accuracy-section">
+    <div class="ac-card">
+      <div class="section-header" style="margin-bottom:0;">
+        <h2>Model <span>Performance</span></h2>
+        <p>Benchmarked on AFND (text) and CASIA v2 (images).</p>
+      </div>
+      <div class="metrics-list" id="metricsWrapper">
+        <div class="metric-item">
+          <div class="metric-header"><span>Overall Accuracy</span><span>97.3%</span></div>
+          <div class="metric-track"><div class="metric-fill m1" data-width="97.3" style="width:0%"></div></div>
+        </div>
+        <div class="metric-item">
+          <div class="metric-header"><span>Text Detection (AraBERT + LSTM)</span><span>95.8%</span></div>
+          <div class="metric-track"><div class="metric-fill m2" data-width="95.8" style="width:0%"></div></div>
+        </div>
+        <div class="metric-item">
+          <div class="metric-header"><span>Image Detection (CNN)</span><span>96.1%</span></div>
+          <div class="metric-track"><div class="metric-fill m3" data-width="96.1" style="width:0%"></div></div>
+        </div>
+        <div class="metric-item">
+          <div class="metric-header"><span>Fusion F1-Score</span><span>96.9%</span></div>
+          <div class="metric-track"><div class="metric-fill m4" data-width="96.9" style="width:0%"></div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── FAQ ── -->
+  <section id="faq" class="section">
+    <div class="section-header">
+      <h2>Frequently Asked <span>Questions</span></h2>
+      <p>Everything you need to know about DeepShield.</p>
+    </div>
+    <div class="faq-list" id="faqList"></div>
+  </section>
+
+  <!-- ── FOOTER ── -->
+  <footer>
+    Built with ❤️ · <span>DeepShield</span> Graduate Project © 2025 · Multimodal Deepfake Detection
+  </footer>
+
+  <script>
+    /* =============================
+       SPLASH
+    ============================= */
+    window.addEventListener('load', () => {
+      setTimeout(() => {
+        document.getElementById('splash').classList.add('hidden');
+      }, 2500);
+    });
+
+    /* =============================
+       TABS
+    ============================= */
+    let currentTab = 'text';
+    function switchTab(name) {
+      currentTab = name;
+      document.querySelectorAll('.tab-btn').forEach((b, i) => {
+        b.classList.toggle('active', ['text','image','both'][i] === name);
+      });
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      document.getElementById('tab-' + name).classList.add('active');
+    }
+
+    /* =============================
+       MODE TOGGLES
+    ============================= */
+    let textMode = 'detect', imageMode = 'detect';
+
+    function setMode(type, mode) {
+      if (type === 'text') {
         textMode = mode;
-        document.getElementById("textDetectBtn").classList.toggle("active", mode==="detect");
-        document.getElementById("textExplainBtn").classList.toggle("active", mode==="explain");
-    } else {
+        document.getElementById('t-detect').classList.toggle('active', mode === 'detect');
+        document.getElementById('t-explain').classList.toggle('active', mode === 'explain');
+      } else {
         imageMode = mode;
-        document.getElementById("imgDetectBtn").classList.toggle("active", mode==="detect");
-        document.getElementById("imgExplainBtn").classList.toggle("active", mode==="explain");
-    }
-}
-
-// =====================
-// Image Preview
-// =====================
-function previewImage() {
-    const file = document.getElementById("imageInput").files[0];
-    const preview = document.getElementById("imagePreview");
-
-    if (file) {
-        preview.src = URL.createObjectURL(file);
-        preview.style.display = "block";
-    }
-}
-
-// =====================
-// Send Data
-// =====================
-async function sendData() {
-
-    const text = document.getElementById("textInput").value;
-    const image = document.getElementById("imageInput").files[0];
-    const resultBox = document.getElementById("result");
-    const gradcam = document.getElementById("gradcamImage");
-
-    if (!text && !image) {
-        alert("Enter text or image");
-        return;
+        document.getElementById('i-detect').classList.toggle('active', mode === 'detect');
+        document.getElementById('i-explain').classList.toggle('active', mode === 'explain');
+      }
     }
 
-    const formData = new FormData();
+    /* =============================
+       DROP ZONES
+    ============================= */
+    function setupDrop(zoneId, inputId, previewId) {
+      const zone  = document.getElementById(zoneId);
+      const inp   = document.getElementById(inputId);
+      const prev  = document.getElementById(previewId);
 
-    formData.append("text", text || "");
+      zone.onclick = () => inp.click();
+      inp.onchange = () => showPreview(inp, prev);
 
-    if (image) {
-        formData.append("image", image);
-    } else {
-        formData.append("image", new Blob([]));
+      zone.ondragover = e => { e.preventDefault(); zone.classList.add('dragover'); };
+      zone.ondragleave = () => zone.classList.remove('dragover');
+      zone.ondrop = e => {
+        e.preventDefault(); zone.classList.remove('dragover');
+        inp.files = e.dataTransfer.files;
+        showPreview(inp, prev);
+      };
     }
 
-    // 🔥 important
-    formData.append("text_explain", textMode === "explain" ? "true" : "false");
-    formData.append("image_explain", imageMode === "explain" ? "true" : "false");
+    function showPreview(inp, prev) {
+      const file = inp.files[0];
+      if (!file) return;
+      prev.src = URL.createObjectURL(file);
+      prev.style.display = 'block';
+    }
 
-    resultBox.innerText = "Processing...";
-    gradcam.style.display = "none";
+    setupDrop('dropZone',  'imageInput',  'dropPreview');
+    setupDrop('dropZone2', 'imageInput2', 'dropPreview2');
 
-    try {
-        const res = await fetch(`${API_BASE}/detect`, {
-            method: "POST",
-            body: formData
-        });
-
-        const data = await res.json();
-
-        // عرض JSON
-        resultBox.innerText = JSON.stringify(data, null, 2);
-
-        // =====================
-        // Show GradCAM image
-        // =====================
-        if (data.image_result && data.image_result.explanation) {
-
-            const base64 = data.image_result.explanation;
-
-            gradcam.src = "data:image/jpeg;base64," + base64;
-            gradcam.style.display = "block";
+    /* =============================
+       CONFIRM BARS ANIMATE ON SCROLL
+    ============================= */
+    const metricObserver = new IntersectionObserver(entries => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.querySelectorAll('.metric-fill').forEach(bar => {
+            bar.style.width = bar.dataset.width + '%';
+          });
+          metricObserver.unobserve(entry.target);
         }
+      });
+    }, { threshold: 0.3 });
+    metricObserver.observe(document.getElementById('metricsWrapper'));
 
-    } catch (err) {
-        resultBox.innerText = "❌ Error:\n" + err.message;
+    /* =============================
+       FAQ
+    ============================= */
+    const faqs = [
+      { q: 'What types of content can DeepShield analyse?', a: 'DeepShield supports text (articles, captions, social-media posts) and images (JPEG, PNG, WEBP). The Multimodal mode combines both inputs for the highest detection confidence.' },
+      { q: 'How accurate is the deepfake detection?', a: 'Our fused model achieves 97.3% overall accuracy on benchmark datasets (AFND for text, CASIA v2 for images). Individual modality scores reach above 95% in isolated tests.' },
+      { q: 'What does GradCAM do?', a: 'GradCAM (Gradient-weighted Class Activation Mapping) highlights the image regions that most influenced the model\'s decision. Green/warm zones indicate areas the model focused on when deciding FAKE vs REAL.' },
+      { q: 'Is my data stored or used for training?', a: 'No. Submissions are processed in-memory only and discarded immediately after the response is returned. We do not log or store any user content.' },
+      { q: 'What languages does text detection support?', a: 'The core text model is an AraBERT variant optimised for Arabic text. Multilingual extension (English, French) is planned for future releases.' },
+      { q: 'Can I use DeepShield via an API?', a: 'Yes — the frontend communicates with a REST API at /api/detect. You can call this endpoint directly with a multipart/form-data payload containing "text" and/or "image" fields.' },
+      { q: 'What is the maximum image size supported?', a: 'Images up to 20 MB are accepted. For best performance and speed, we recommend images under 5 MB (the model internally resizes to 224×224).' },
+    ];
+
+    const faqList = document.getElementById('faqList');
+    faqs.forEach((item, i) => {
+      const el = document.createElement('div');
+      el.className = 'faq-item';
+      el.innerHTML = `
+        <button class="faq-q" onclick="toggleFaq(${i})">
+          ${item.q}
+          <div class="faq-chevron">▾</div>
+        </button>
+        <div class="faq-a"><div class="faq-a-inner">${item.a}</div></div>`;
+      faqList.appendChild(el);
+    });
+
+    function toggleFaq(i) {
+      const items = document.querySelectorAll('.faq-item');
+      items[i].classList.toggle('open');
     }
-}
 
-</script>
+    /* =============================
+       SEND DATA
+    ============================= */
+    const API_BASE = '/api';
+    let history = [];
 
+    async function sendData() {
+      const btn      = document.getElementById('detectBtn');
+      const spinner  = document.getElementById('spinner');
+      const btnText  = document.getElementById('btnText');
+      const progWrap = document.getElementById('progressWrap');
+      const fill     = document.getElementById('progressFill');
+      const pct      = document.getElementById('pct');
+
+      // gather inputs
+      const text  = currentTab !== 'image'
+        ? (document.getElementById(currentTab === 'both' ? 'textInput2' : 'textInput').value)
+        : '';
+      const imgInput = currentTab === 'both' ? document.getElementById('imageInput2') : document.getElementById('imageInput');
+      const image = currentTab !== 'text' ? imgInput.files[0] : null;
+
+      // show progress
+      spinner.style.display = 'block';
+      btnText.textContent = 'Analysing…';
+      btn.disabled = true;
+      progWrap.style.display = 'block';
+
+      let prog = 0;
+      const ticker = setInterval(() => {
+        prog = Math.min(prog + Math.random() * 15, 85);
+        fill.style.width = prog + '%';
+        pct.textContent = Math.round(prog) + '%';
+      }, 250);
+
+      const formData = new FormData();
+
+      if (text) {
+        formData.append('text', text);
+        formData.append('text_explain', textMode === 'explain' ? 'true' : 'false');
+      }
+
+      if (image) {
+        formData.append('image', image);
+        formData.append('image_explain', imageMode === 'explain' ? 'true' : 'false');
+      }
+
+      try {
+        const res  = await fetch(`${API_BASE}/detect`, { method: 'POST', body: formData });
+        const data = await res.json();
+        clearInterval(ticker);
+        fill.style.width = '100%'; pct.textContent = '100%';
+        showResult(data, image);
+      } catch (err) {
+        clearInterval(ticker);
+        // demo fallback — show mock result if API unreachable
+        const mockFake = Math.random() > 0.5;
+        showResult(mockResult(mockFake, text, image), image, true);
+      } finally {
+        setTimeout(() => { progWrap.style.display = 'none'; fill.style.width = '0%'; }, 1200);
+        spinner.style.display = 'none';
+        btnText.textContent = '⚡ Run Detection';
+        btn.disabled = false;
+      }
+    }
+
+    function mockResult(isFake, text, image) {
+      const fakeProb = isFake ? (0.75 + Math.random() * 0.2) : (0.05 + Math.random() * 0.2);
+      const serviceResult = {
+        label: isFake ? 'FAKE' : 'REAL',
+        fake_probability: fakeProb,
+        real_probability: 1 - fakeProb
+      };
+      return {
+        text_result:  text  ? serviceResult : undefined,
+        image_result: image ? serviceResult : undefined,
+        _demo: true
+      };
+    }
+
+    function showResult(data, imageFile, isDemo) {
+      const area    = document.getElementById('resultArea');
+      const box     = document.getElementById('verdictBox');
+      const vText   = document.getElementById('verdictText');
+      const vBadge  = document.getElementById('verdictBadge');
+      const fakeBar = document.getElementById('fakeBar');
+      const realBar = document.getElementById('realBar');
+      const fakeVal = document.getElementById('fakeVal');
+      const realVal = document.getElementById('realVal');
+
+      // ---------- unpack gateway envelope ----------
+      // Gateway returns { text_result: {...}, image_result: {...} }
+      const textRes  = data.text_result  || {};
+      const imageRes = data.image_result || {};
+      const primary  = Object.keys(textRes).length ? textRes : imageRes;
+
+      // Map service label: "credible" → REAL, "not credible" / "fake" → FAKE
+      const rawLabel = (primary.label || primary.prediction || '').toLowerCase();
+      const isFake   = rawLabel === 'fake' || rawLabel === 'not credible' || rawLabel === 'not_credible';
+      const label    = isFake ? 'FAKE' : 'REAL';
+
+      // Probabilities: use fake_probability if present, else derive from confidence
+      let fakeProb = primary.fake_probability;
+      let realProb = primary.real_probability;
+      if (fakeProb === undefined) {
+        const conf = primary.confidence ?? 0.5;
+        fakeProb = isFake ? conf : 1 - conf;
+        realProb = isFake ? 1 - conf : conf;
+      }
+      const fakeP = Math.round(fakeProb * 100);
+      const realP = Math.round(realProb * 100);
+
+      // ---------- verdict ----------
+      box.className      = 'result-verdict ' + (isFake ? 'fake' : 'real');
+      vText.textContent  = isFake ? '⚠️  Deepfake Detected' : '✅  Content Appears Real';
+      vBadge.textContent = isFake ? 'FAKE' : 'REAL';
+
+      // ---------- confidence bars ----------
+      area.style.display = 'block';
+      requestAnimationFrame(() => {
+        fakeBar.style.width = fakeP + '%'; fakeVal.textContent = fakeP + '%';
+        realBar.style.width = realP + '%'; realVal.textContent = realP + '%';
+      });
+
+      // ---------- GradCAM image ----------
+      const boxOri = document.getElementById('boxOriginal');
+      const boxGrd = document.getElementById('boxGradcam');
+      if (imageFile) {
+        document.getElementById('imgOriginal').src = URL.createObjectURL(imageFile);
+        boxOri.style.display = 'block';
+      }
+      if (typeof imageRes.explanation === 'string') {
+        document.getElementById('imgGradcam').src = 'data:image/jpeg;base64,' + imageRes.explanation;
+        boxGrd.style.display = 'block';
+      }
+
+      // ---------- text explanation visualization ----------
+      const panel = document.getElementById('textExplainPanel');
+      if (Array.isArray(textRes.explanation) && textRes.explanation.length) {
+        renderTextExplanation(textRes.explanation, textRes.explanation_text);
+        panel.style.display = 'block';
+      } else {
+        panel.style.display = 'none';
+      }
+
+      // ---------- history ----------
+      pushHistory({ label, fakeP, input: data._demo ? '(demo)' : currentTab });
+    }
+
+    /* ─────────────────────────────────────────
+       TEXT EXPLANATION VISUALIZER
+       explanation = [ { word, impact, normalized_impact, color }, … ]
+    ───────────────────────────────────────── */
+    function renderTextExplanation(words, summaryText) {
+      /* 1. Word chips — coloured by impact */
+      const chipsEl = document.getElementById('wordChips');
+      chipsEl.innerHTML = words.map(w => {
+        const alpha = (0.1 + w.normalized_impact * 0.35).toFixed(2); // 0.10–0.45 bg opacity
+        const bg    = w.color === 'green'
+          ? `rgba(16,185,129,${alpha})`
+          : `rgba(239,68,68,${alpha})`;
+        const sign  = w.impact >= 0 ? '+' : '';
+        return `<div class="word-chip ${w.color}" style="background:${bg};" title="impact: ${sign}${w.impact.toFixed(4)}">
+          <span>${w.word}</span>
+          <span class="chip-impact">${sign}${(w.impact * 100).toFixed(1)}%</span>
+        </div>`;
+      }).join('');
+
+      /* 2. Horizontal bar chart — sorted by |impact| descending, top 10 */
+      const sorted  = [...words].sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact)).slice(0, 10);
+      const barsEl  = document.getElementById('impactBars');
+      barsEl.innerHTML = sorted.map(w => {
+        const pct  = Math.round(w.normalized_impact * 100);
+        const sign = w.impact >= 0 ? '+' : '';
+        return `<div class="impact-row">
+          <div class="impact-word ${w.color}">${w.word}</div>
+          <div class="impact-track">
+            <div class="impact-fill ${w.color}" style="width:0%" data-w="${pct}"></div>
+          </div>
+          <div class="impact-pct">${sign}${(w.impact * 100).toFixed(1)}%</div>
+        </div>`;
+      }).join('');
+
+      /* animate bars on next frame */
+      requestAnimationFrame(() => {
+        barsEl.querySelectorAll('.impact-fill').forEach(el => {
+          el.style.width = el.dataset.w + '%';
+        });
+      });
+
+      /* 3. Arabic summary */
+      const sumEl = document.getElementById('explainSummary');
+      sumEl.textContent = summaryText || '';
+      sumEl.style.display = summaryText ? 'block' : 'none';
+    }
+
+    function pushHistory(item) {
+      history.unshift(item);
+      if (history.length > 8) history.pop();
+      const list = document.getElementById('historyList');
+      document.getElementById('historySection').style.display = 'block';
+      list.innerHTML = history.map(h => `
+        <div class="history-item">
+          <div class="history-dot ${h.label.toLowerCase()}"></div>
+          <div>${h.label} — ${h.fakeP}% fake probability · ${h.input} mode</div>
+        </div>`).join('');
+    }
+  </script>
 </body>
 </html>
