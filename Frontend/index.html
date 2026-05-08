@@ -628,7 +628,6 @@
       <div class="tabs">
         <button class="tab-btn active" onclick="switchTab('text')">📝 Text Analysis</button>
         <button class="tab-btn" onclick="switchTab('image')">🖼️ Image Analysis</button>
-        <button class="tab-btn" onclick="switchTab('both')">🔀 Multimodal</button>
       </div>
 
       <!-- text tab -->
@@ -657,18 +656,7 @@
         </div>
       </div>
 
-      <!-- both tab -->
-      <div class="tab-content" id="tab-both">
-        <div class="field-label">Input Text</div>
-        <textarea id="textInput2" rows="3" placeholder="Enter the text associated with the image…"></textarea>
-        <div style="margin-top:16px;" class="field-label">Upload Image</div>
-        <div class="drop-zone" id="dropZone2">
-          <div class="drop-icon">📤</div>
-          <div class="drop-text">Drag & drop or <span>browse</span></div>
-          <img class="drop-preview" id="dropPreview2" />
-          <input type="file" id="imageInput2" accept="image/*" />
-        </div>
-      </div>
+
 
       <!-- detect button -->
       <button class="detect-btn" onclick="sendData()" id="detectBtn">
@@ -875,8 +863,9 @@
       prev.style.display = 'block';
     }
 
-    setupDrop('dropZone',  'imageInput',  'dropPreview');
-    setupDrop('dropZone2', 'imageInput2', 'dropPreview2');
+    // Only setup drop zones that actually exist in the DOM
+    if (document.getElementById('dropZone'))  setupDrop('dropZone',  'imageInput',  'dropPreview');
+    if (document.getElementById('dropZone2')) setupDrop('dropZone2', 'imageInput2', 'dropPreview2');
 
     /* =============================
        CONFIRM BARS ANIMATE ON SCROLL
@@ -939,11 +928,8 @@
       const pct      = document.getElementById('pct');
 
       // gather inputs
-      const text  = currentTab !== 'image'
-        ? (document.getElementById(currentTab === 'both' ? 'textInput2' : 'textInput').value)
-        : '';
-      const imgInput = currentTab === 'both' ? document.getElementById('imageInput2') : document.getElementById('imageInput');
-      const image = currentTab !== 'text' ? imgInput.files[0] : null;
+      const text  = currentTab === 'text'  ? document.getElementById('textInput').value.trim()  : '';
+      const image = currentTab === 'image' ? document.getElementById('imageInput').files[0] : null;
 
       // show progress
       spinner.style.display = 'block';
@@ -972,15 +958,25 @@
 
       try {
         const res  = await fetch(`${API_BASE}/detect`, { method: 'POST', body: formData });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         clearInterval(ticker);
         fill.style.width = '100%'; pct.textContent = '100%';
         showResult(data, image);
       } catch (err) {
         clearInterval(ticker);
-        // demo fallback — show mock result if API unreachable
-        const mockFake = Math.random() > 0.5;
-        showResult(mockResult(mockFake, text, image), image, true);
+        fill.style.width = '0%'; pct.textContent = '0%';
+        // Show a clear error — do NOT use random mock so results are deterministic
+        const area = document.getElementById('resultArea');
+        const box  = document.getElementById('verdictBox');
+        area.style.display = 'block';
+        box.className = 'result-verdict fake';
+        document.getElementById('verdictText').textContent  = '⚠️  API Unreachable — check that your backend is running';
+        document.getElementById('verdictBadge').textContent = 'ERROR';
+        document.getElementById('fakeBar').style.width = '0%'; document.getElementById('fakeVal').textContent = '—';
+        document.getElementById('realBar').style.width = '0%'; document.getElementById('realVal').textContent = '—';
+        document.getElementById('textExplainPanel').style.display = 'none';
+        console.error('DeepShield API error:', err);
       } finally {
         setTimeout(() => { progWrap.style.display = 'none'; fill.style.width = '0%'; }, 1200);
         spinner.style.display = 'none';
@@ -991,14 +987,18 @@
 
     function mockResult(isFake, text, image) {
       const fakeProb = isFake ? (0.75 + Math.random() * 0.2) : (0.05 + Math.random() * 0.2);
-      const serviceResult = {
+      const textServiceResult = {
         label: isFake ? 'FAKE' : 'REAL',
-        fake_probability: fakeProb,
-        real_probability: 1 - fakeProb
+        confidence: isFake ? fakeProb : 1 - fakeProb
+      };
+      const imageServiceResult = {
+        prediction: isFake ? 1 : 0,
+        prob_fake: fakeProb,
+        prob_real: 1 - fakeProb
       };
       return {
-        text_result:  text  ? serviceResult : undefined,
-        image_result: image ? serviceResult : undefined,
+        text_result:  text  ? textServiceResult  : undefined,
+        image_result: image ? imageServiceResult : undefined,
         _demo: true
       };
     }
@@ -1014,24 +1014,51 @@
       const realVal = document.getElementById('realVal');
 
       // ---------- unpack gateway envelope ----------
-      // Gateway returns { text_result: {...}, image_result: {...} }
-      const textRes  = data.text_result  || {};
-      const imageRes = data.image_result || {};
-      const primary  = Object.keys(textRes).length ? textRes : imageRes;
+      // Gateway may return { text_result: {...}, image_result: {...} }
+      // OR the image service response may be returned flat at the top level.
+      let textRes  = data.text_result  || {};
+      let imageRes = data.image_result || {};
 
-      // Map service label: "credible" → REAL, "not credible" / "fake" → FAKE
-      const rawLabel = (primary.label || primary.prediction || '').toLowerCase();
-      const isFake   = rawLabel === 'fake' || rawLabel === 'not credible' || rawLabel === 'not_credible';
-      const label    = isFake ? 'FAKE' : 'REAL';
-
-      // Probabilities: use fake_probability if present, else derive from confidence
-      let fakeProb = primary.fake_probability;
-      let realProb = primary.real_probability;
-      if (fakeProb === undefined) {
-        const conf = primary.confidence ?? 0.5;
-        fakeProb = isFake ? conf : 1 - conf;
-        realProb = isFake ? 1 - conf : conf;
+      // If the top-level response itself looks like a direct image-service response
+      // (has prob_fake / prob_real but no nested envelope keys), treat it as imageRes.
+      if (!Object.keys(textRes).length && !Object.keys(imageRes).length) {
+        if (data.prob_fake !== undefined || data.prob_real !== undefined || data.prediction !== undefined) {
+          imageRes = data;
+        }
       }
+
+      // ── Text service shape: { prediction: "credible"|"not credible", confidence, explanation[] }
+      // ── Image service shape: { prediction: 0|1, prob_fake, prob_real, threshold_used, explanation? }
+      let isFake, fakeProb, realProb;
+
+      if (Object.keys(textRes).length && !Object.keys(imageRes).length) {
+        // TEXT ONLY
+        const rawLabel = (textRes.label || textRes.prediction || '').toString().toLowerCase();
+        isFake   = rawLabel === 'fake' || rawLabel === 'not credible' || rawLabel === 'not_credible';
+        const conf = textRes.confidence ?? 0.5;
+        fakeProb = isFake ? conf : 1 - conf;
+        realProb = 1 - fakeProb;
+
+      } else if (Object.keys(imageRes).length && !Object.keys(textRes).length) {
+        // IMAGE ONLY — prediction is integer: 1 = fake, 0 = real
+        isFake   = imageRes.prediction === 1 || imageRes.prediction === '1';
+        fakeProb = imageRes.prob_fake ?? (isFake ? 0.8 : 0.2);
+        realProb = imageRes.prob_real ?? (1 - fakeProb);
+
+      } else if (Object.keys(textRes).length && Object.keys(imageRes).length) {
+        // BOTH present — merge: fake if either says fake
+        const textFake  = (textRes.label  || textRes.prediction  || '').toString().toLowerCase();
+        const imgFake   = imageRes.prediction === 1 || imageRes.prediction === '1';
+        isFake   = textFake === 'fake' || textFake === 'not credible' || imgFake;
+        fakeProb = ((textRes.confidence ?? 0.5) + (imageRes.prob_fake ?? 0.5)) / 2;
+        realProb = 1 - fakeProb;
+
+      } else {
+        // Fallback — nothing usable in the response
+        isFake = false; fakeProb = 0; realProb = 1;
+      }
+
+      const label = isFake ? 'FAKE' : 'REAL';
       const fakeP = Math.round(fakeProb * 100);
       const realP = Math.round(realProb * 100);
 
@@ -1061,8 +1088,13 @@
 
       // ---------- text explanation visualization ----------
       const panel = document.getElementById('textExplainPanel');
-      if (Array.isArray(textRes.explanation) && textRes.explanation.length) {
-        renderTextExplanation(textRes.explanation, textRes.explanation_text);
+      // API may return explanation under 'explanation' or 'words' key
+      const explainWords = Array.isArray(textRes.explanation) ? textRes.explanation
+                         : Array.isArray(textRes.words)       ? textRes.words
+                         : null;
+      const explainSummary = textRes.explanation_text || textRes.summary || '';
+      if (explainWords && explainWords.length) {
+        renderTextExplanation(explainWords, explainSummary);
         panel.style.display = 'block';
       } else {
         panel.style.display = 'none';
