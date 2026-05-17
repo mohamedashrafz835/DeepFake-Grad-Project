@@ -1,0 +1,142 @@
+name: CD — Deploy Image Service
+
+# ── Triggers ──────────────────────────────────────────────────────
+# 1. Manually (from GitHub UI)
+# 2. Via Lambda workflow_dispatch API call (triggered by S3 upload)
+on:
+  workflow_dispatch:
+    inputs:
+      service_name:
+        description: "Service name (always image-service)"
+        required: true
+        default: "image-service"
+      model_version:
+        description: "Model version (e.g. v7)"
+        required: true
+      s3_path:
+        description: "Full S3 path to the new model (e.g. s3://ml-models-.../image-service/v7/model.pt)"
+        required: true
+
+env:
+  AWS_REGION:  us-east-1
+  SERVICE:     image-service
+  IMAGE_TAG:   latest
+
+jobs:
+  # ── Deploy to both EC2 instances (sequentially for rolling deploy) ─
+  deploy:
+    name: Deploy image-service to EC2 (${{ matrix.instance }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      # IMPORTANT: max-parallel: 1 ensures true rolling deploy
+      # EC2-1 is updated and health-checked before EC2-2 is touched
+      max-parallel: 1
+      matrix:
+        include:
+          - instance: EC2-1
+            host_secret: EC2_1_HOST
+          - instance: EC2-2
+            host_secret: EC2_2_HOST
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log deployment intent
+        run: |
+          echo "═══════════════════════════════════════════════════════"
+          echo " 🚀 Deploying: image-service"
+          echo " 📦 Model version: ${{ inputs.model_version }}"
+          echo " 🪣 S3 path:       ${{ inputs.s3_path }}"
+          echo " 🖥️  Target:        ${{ matrix.instance }}"
+          echo "═══════════════════════════════════════════════════════"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: SSH — Rolling deploy image-service
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host:     ${{ secrets[matrix.host_secret] }}
+          username: ec2-user
+          key:      ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          timeout:  120s
+          script: |
+            set -euo pipefail
+
+            ECR_REGISTRY="${{ steps.ecr-login.outputs.registry }}"
+            export AWS_REGION="${{ env.AWS_REGION }}"
+
+            echo "ECR_REGISTRY=${ECR_REGISTRY}" >> /opt/deepfake/.env
+
+            # Ensure docker network exists
+            docker network inspect deepfake-net >/dev/null 2>&1 \
+              || docker network create deepfake-net
+
+            # Pull latest image-service image
+            docker pull "${ECR_REGISTRY}/deepfake/image-service:${{ env.IMAGE_TAG }}"
+
+            PROD_PORT=5002
+            TEMP_PORT=15002
+            IMAGE="${ECR_REGISTRY}/deepfake/image-service:${{ env.IMAGE_TAG }}"
+
+            echo "Starting new container on temp port ${TEMP_PORT}..."
+            docker rm -f deepfake-image-service-new 2>/dev/null || true
+            docker run -d \
+              --name deepfake-image-service-new \
+              --network deepfake-net \
+              -p "${TEMP_PORT}:${PROD_PORT}" \
+              --restart no \
+              "$IMAGE"
+
+            # Health check loop (image model loading can take time)
+            HEALTHY=false
+            for i in $(seq 1 18); do
+              sleep 10
+              STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+                --max-time 5 http://localhost:${TEMP_PORT}/health 2>/dev/null || echo "000")
+              echo "  Attempt $i: HTTP $STATUS"
+              if [[ "$STATUS" == "200" ]]; then
+                HEALTHY=true
+                break
+              fi
+            done
+
+            if [[ "$HEALTHY" != "true" ]]; then
+              echo "❌ Health check failed — rolling back"
+              docker rm -f deepfake-image-service-new
+              exit 1
+            fi
+
+            echo "✅ New container is healthy — swapping..."
+            docker rm -f deepfake-image-service 2>/dev/null || true
+            docker rm -f deepfake-image-service-new
+
+            docker run -d \
+              --name deepfake-image-service \
+              --network deepfake-net \
+              -p "${PROD_PORT}:${PROD_PORT}" \
+              --restart unless-stopped \
+              "$IMAGE"
+
+            sleep 10
+            FINAL=$(curl -s -o /dev/null -w "%{http_code}" \
+              --max-time 10 http://localhost:${PROD_PORT}/health 2>/dev/null || echo "000")
+            echo "Final health check: HTTP $FINAL"
+            [[ "$FINAL" == "200" ]] && echo "✅ image-service deployed successfully" || exit 1
+
+      - name: Notify success
+        if: success()
+        run: |
+          echo "✅ image-service deployed to ${{ matrix.instance }}"
+          echo "   Model: ${{ inputs.model_version }}"
+          echo "   S3:    ${{ inputs.s3_path }}"

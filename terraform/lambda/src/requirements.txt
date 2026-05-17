@@ -1,0 +1,4 @@
+# No external dependencies needed!
+# boto3 and urllib are both available in the Lambda Python 3.12 runtime.
+# Add packages here only if you extend the Lambda with new functionality.
+# Example: requests==2.31.0
