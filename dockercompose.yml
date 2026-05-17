@@ -6,9 +6,7 @@ services:
   # Frontend  (React / HTML static site)
   # ─────────────────────────────────────────
   frontend:
-    build:
-      context: ./Frontend
-      dockerfile: Dockerfile
+    image: ${ECR_REGISTRY}/deepfake/frontend:${TAG:-latest}
     container_name: deepfake-frontend
     ports:
       - "3000:80"          # adjust if your frontend runs on a different port
@@ -22,15 +20,16 @@ services:
   # API Gateway  (Flask / FastAPI)
   # ─────────────────────────────────────────
   api-gateway:
-    build:
-      context: ./api-gateway
-      dockerfile: Dockerfile
+    image: ${ECR_REGISTRY}/deepfake/api-gateway:${TAG:-latest}
     container_name: deepfake-api-gateway
     ports:
       - "5000:5000"        # adjust to whatever port your gateway exposes
     environment:
       - TEXT_SERVICE_URL=http://text-service:5001
       - IMAGE_SERVICE_URL=http://image-service:5002
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
     depends_on:
       - text-service
       - image-service
@@ -42,12 +41,14 @@ services:
   # Text Service  (NLP / BERT model)
   # ─────────────────────────────────────────
   text-service:
-    build:
-      context: ./Text_Service
-      dockerfile: Dockerfile
+    image: ${ECR_REGISTRY}/deepfake/text-service:${TAG:-latest}
     container_name: deepfake-text-service
     ports:
       - "5001:5001"        # adjust to the port your text service listens on
+    environment:
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
     networks:
       - deepfake-net
     restart: unless-stopped
@@ -56,12 +57,14 @@ services:
   # Image Service  (CV / deep-learning model)
   # ─────────────────────────────────────────
   image-service:
-    build:
-      context: ./Image_service
-      dockerfile: Dockerfile
+    image: ${ECR_REGISTRY}/deepfake/image-service:${TAG:-latest}
     container_name: deepfake-image-service
     ports:
       - "5002:5002"        # adjust to the port your image service listens on
+    environment:
+      - AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
     networks:
       - deepfake-net
     restart: unless-stopped

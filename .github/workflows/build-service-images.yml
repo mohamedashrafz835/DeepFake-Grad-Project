@@ -1,8 +1,14 @@
-name: CI — Build & Push All Images to ECR
+name: CI — Build & Push Service Images
 
 on:
   push:
     branches: [main]
+    paths:
+      - 'Image_service/**'
+      - 'Text_Service/**'
+      - 'api-gateway/**'
+      - 'Frontend/**'
+      - 'docker/services/**'
   pull_request:
     branches: [main]
 
@@ -10,27 +16,25 @@ env:
   AWS_REGION: us-east-1
 
 jobs:
-  # ── Build & Push ──────────────────────────────────────────────
   build-and-push:
-    name: Build ${{ matrix.service }}
+    name: Build ${{ matrix.service.name }}
     runs-on: ubuntu-latest
 
     strategy:
-      # Build all 4 services in parallel
       matrix:
-        include:
-          - service: frontend
+        service:
+          - name: frontend
             context: ./Frontend
-          - service: api-gateway
+          - name: api-gateway
             context: ./api-gateway
-          - service: text-service
+          - name: text-service
             context: ./Text_Service
-          - service: image-service
+          - name: image-service
             context: ./Image_service
 
     permissions:
       contents: read
-      id-token: write   # for OIDC auth (recommended over long-lived keys)
+      id-token: write
 
     steps:
       - name: Checkout
@@ -51,9 +55,10 @@ jobs:
         id: meta
         run: |
           REGISTRY="${{ steps.ecr-login.outputs.registry }}"
-          REPO="deepfake/${{ matrix.service }}"
+          REPO="deepfake/${{ matrix.service.name }}"
           SHA="${{ github.sha }}"
           SHORT_SHA="${SHA:0:7}"
+          echo "registry=${REGISTRY}" >> $GITHUB_OUTPUT
           echo "image=${REGISTRY}/${REPO}" >> $GITHUB_OUTPUT
           echo "tag=${SHORT_SHA}"          >> $GITHUB_OUTPUT
           echo "full=${REGISTRY}/${REPO}:${SHORT_SHA}" >> $GITHUB_OUTPUT
@@ -61,27 +66,29 @@ jobs:
       - name: Build Docker image
         run: |
           docker build \
+            -f docker/services/${{ matrix.service.name }}/Dockerfile \
+            --build-arg ECR_REGISTRY=${{ steps.meta.outputs.registry }} \
+            --build-arg BASE_TAG=base-latest \
             -t "${{ steps.meta.outputs.full }}" \
             -t "${{ steps.meta.outputs.image }}:latest" \
-            ${{ matrix.context }}
+            ${{ matrix.service.context }}
 
       - name: Push Docker image to ECR
-        # Only push on merges to main (not on PRs)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           docker push "${{ steps.meta.outputs.full }}"
           docker push "${{ steps.meta.outputs.image }}:latest"
-          echo "✅ Pushed ${{ matrix.service }}:${{ steps.meta.outputs.tag }} → ECR"
+          echo "✅ Pushed ${{ matrix.service.name }}:${{ steps.meta.outputs.tag }} → ECR"
 
       - name: Export image tags as artifact
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
-          echo "${{ steps.meta.outputs.tag }}" > /tmp/${{ matrix.service }}-tag.txt
+          echo "${{ steps.meta.outputs.tag }}" > /tmp/${{ matrix.service.name }}-tag.txt
 
       - name: Upload tag artifact
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.service }}-tag
-          path: /tmp/${{ matrix.service }}-tag.txt
+          name: ${{ matrix.service.name }}-tag
+          path: /tmp/${{ matrix.service.name }}-tag.txt
           retention-days: 1

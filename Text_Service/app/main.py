@@ -30,12 +30,27 @@ def load_everything():
 
     print(f"🔥 Startup PID: {os.getpid()}")
 
-    # safe download
-    if not os.path.exists(MODEL_PATH):
+    s3_uri = os.environ.get("MODEL_CONFIG_S3_KEY")
+    
+    if s3_uri and s3_uri.startswith("s3://"):
+        import boto3
+        from urllib.parse import urlparse
+        
+        tmp_path = MODEL_PATH + ".tmp"
+        print(f"⬇️ Downloading model from {s3_uri}...")
+        
+        s3 = boto3.client('s3')
+        parsed = urlparse(s3_uri)
+        s3.download_file(parsed.netloc, parsed.path.lstrip('/'), tmp_path)
+        os.rename(tmp_path, MODEL_PATH)
+        print("✅ Download complete.")
+        
+    # fallback to gdown if no S3 URI provided and model doesn't exist
+    elif not os.path.exists(MODEL_PATH):
         tmp_path = MODEL_PATH + ".tmp"
 
         if not os.path.exists(tmp_path):
-            print("⬇️ Downloading model...")
+            print("⬇️ Downloading model via gdown (fallback)...")
             gdown.download(DRIVE_URL, tmp_path, quiet=False)
 
         os.rename(tmp_path, MODEL_PATH)

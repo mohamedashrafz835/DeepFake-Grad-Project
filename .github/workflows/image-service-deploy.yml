@@ -95,6 +95,8 @@ jobs:
               --name deepfake-image-service-new \
               --network deepfake-net \
               -p "${TEMP_PORT}:${PROD_PORT}" \
+              -e MODEL_CONFIG_S3_KEY="${{ inputs.s3_path }}" \
+              -e AWS_DEFAULT_REGION="${AWS_REGION}" \
               --restart no \
               "$IMAGE"
 
@@ -125,6 +127,8 @@ jobs:
               --name deepfake-image-service \
               --network deepfake-net \
               -p "${PROD_PORT}:${PROD_PORT}" \
+              -e MODEL_CONFIG_S3_KEY="${{ inputs.s3_path }}" \
+              -e AWS_DEFAULT_REGION="${AWS_REGION}" \
               --restart unless-stopped \
               "$IMAGE"
 
