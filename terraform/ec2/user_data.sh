@@ -29,7 +29,7 @@ usermod -aG docker ec2-user
 # ── 3. Install Docker Compose v2 ──────────────────────────────────
 COMPOSE_VERSION="2.27.0"
 mkdir -p /usr/local/lib/docker/cli-plugins
-curl -SL "https://github.com/docker/compose/releases/download/v${COMPOSE_VERSION}/docker-compose-linux-x86_64" \
+curl -SL "https://github.com/docker/compose/releases/download/v$${COMPOSE_VERSION}/docker-compose-linux-x86_64" \
   -o /usr/local/lib/docker/cli-plugins/docker-compose
 chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
 # Also create legacy alias
@@ -69,7 +69,7 @@ version: "3.9"
 
 services:
   frontend:
-    image: ${ECR_REGISTRY}/deepfake/frontend:latest
+    image: ${ecr_registry}/deepfake/frontend:latest
     container_name: deepfake-frontend
     ports:
       - "3000:80"
@@ -86,7 +86,7 @@ services:
       start_period: 15s
 
   api-gateway:
-    image: ${ECR_REGISTRY}/deepfake/api-gateway:latest
+    image: ${ecr_registry}/deepfake/api-gateway:latest
     container_name: deepfake-api-gateway
     ports:
       - "5000:5000"
@@ -107,7 +107,7 @@ services:
       start_period: 20s
 
   text-service:
-    image: ${ECR_REGISTRY}/deepfake/text-service:latest
+    image: ${ecr_registry}/deepfake/text-service:latest
     container_name: deepfake-text-service
     ports:
       - "5001:5001"
@@ -122,7 +122,7 @@ services:
       start_period: 30s
 
   image-service:
-    image: ${ECR_REGISTRY}/deepfake/image-service:latest
+    image: ${ecr_registry}/deepfake/image-service:latest
     container_name: deepfake-image-service
     ports:
       - "5002:5002"
@@ -141,8 +141,6 @@ networks:
     driver: bridge
 COMPOSE
 
-# Replace literal ${ECR_REGISTRY} with actual value in compose file
-sed -i "s|\${ECR_REGISTRY}|${ecr_registry}|g" "$APP_DIR/docker-compose.prod.yml"
 
 # ── 10. Pull images and start services ───────────────────────────
 cd "$APP_DIR"
