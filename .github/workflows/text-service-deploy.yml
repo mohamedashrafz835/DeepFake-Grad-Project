@@ -1,7 +1,7 @@
 name: CI/CD — Text Service
 
 # ── Triggers ──────────────────────────────────────────────────────
-# Triggered ONLY by the Lambda function via the GitHub Actions API
+# Triggered ONLY by the Lambda function (deepfake-mlops-router) via the GitHub Actions API
 # (workflow_dispatch) when new text-service weights are uploaded to S3.
 #
 # Lambda parses the S3 key (text-service/<version>/model.pt),
@@ -20,7 +20,7 @@ on:
         description: "Model version (e.g. v12)"
         required: true
       s3_path:
-        description: "Full S3 path to the new model (e.g. s3://ml-models-.../text-service/v12/model.pt)"
+        description: "Full S3 path to the new model (e.g. s3://ml-models-deepfake-337205347153/text-service/v12/model.pt)"
         required: true
 
 env:
@@ -54,7 +54,7 @@ jobs:
       - name: Set image metadata
         id: meta
         run: |
-          REGISTRY="${{ steps.ecr-login.outputs.registry }}"
+          REGISTRY="337205347153.dkr.ecr.us-east-1.amazonaws.com"
           MODEL_TAG="${{ inputs.model_version }}"
           echo "image=${REGISTRY}/deepfake/text-service"              >> $GITHUB_OUTPUT
           echo "full=${REGISTRY}/deepfake/text-service:${MODEL_TAG}" >> $GITHUB_OUTPUT
@@ -84,9 +84,9 @@ jobs:
       matrix:
         include:
           - instance: EC2-1
-            host_secret: EC2_1_HOST
+            host: 18.208.200.130
           - instance: EC2-2
-            host_secret: EC2_2_HOST
+            host: 44.211.146.74
 
     steps:
       - name: Log deployment intent
@@ -112,7 +112,7 @@ jobs:
       - name: SSH — Rolling deploy text-service
         uses: appleboy/ssh-action@v1.0.3
         with:
-          host:     ${{ secrets[matrix.host_secret] }}
+          host:     ${{ matrix.host }}
           username: ec2-user
           key:      ${{ secrets.EC2_SSH_PRIVATE_KEY }}
           timeout:  180s
