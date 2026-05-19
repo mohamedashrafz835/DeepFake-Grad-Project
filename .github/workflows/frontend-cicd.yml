@@ -8,7 +8,7 @@ name: CI/CD — Frontend
 # Lambda only triggers image-service-deploy.yml and text-service-deploy.yml.
 on:
   push:
-    branches: [main]
+    branches: [main, staging]
     paths:
       - "Frontend/**"
   workflow_dispatch:
