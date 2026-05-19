@@ -9,4 +9,11 @@
 # Lambda ONLY triggers image-service-deploy.yml and text-service-deploy.yml.
 # It never triggers frontend or api-gateway workflows.
 # ─────────────────────────────────────────────────────────────────
-on: {}
+on:
+  workflow_dispatch:
+
+jobs:
+  disabled:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "This workflow is disabled."
