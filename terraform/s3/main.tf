@@ -104,7 +104,7 @@ resource "aws_s3_bucket_notification" "model_upload" {
     lambda_function_arn = var.lambda_arn
     events              = ["s3:ObjectCreated:*"]
     filter_prefix       = "image-service/"
-    filter_suffix       = ".pt"
+    filter_suffix       = ".pth"
   }
 
   depends_on = [aws_s3_bucket.models]

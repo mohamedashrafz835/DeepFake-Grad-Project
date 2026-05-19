@@ -2,6 +2,6 @@ fastapi
 uvicorn[standard]
 torch
 transformers
-gdown
+boto3
 lime
 numpy

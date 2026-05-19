@@ -1,3 +1,5 @@
+import os
+import boto3
 from fastapi import FastAPI, UploadFile, File
 from PIL import Image
 import torch
@@ -15,6 +17,24 @@ app = FastAPI(title="Forgery Detection API")
 
 model = None
 THRESHOLD = 0.384
+LOCAL_MODEL_PATH = "/app/model.pth"
+
+
+# =========================
+# S3 helper
+# =========================
+def _parse_s3_uri(s3_uri: str):
+    """Parse 's3://bucket/key/path' → (bucket, key)."""
+    s3_uri = s3_uri.replace("s3://", "", 1)
+    bucket, _, key = s3_uri.partition("/")
+    return bucket, key
+
+
+def _download_from_s3(s3_path: str, local_path: str) -> None:
+    print(f"⬇️  Downloading model from {s3_path} …")
+    bucket, key = _parse_s3_uri(s3_path)
+    boto3.client("s3").download_file(bucket, key, local_path)
+    print(f"✅ Model downloaded to {local_path}")
 
 
 # =========================
@@ -31,13 +51,27 @@ class WrapperModel(torch.nn.Module):
 
 
 # =========================
-# Load model once
+# Load model once at startup
 # =========================
 @app.on_event("startup")
 def load_model():
     global model
-    print("🚀 Loading model...")
-    model = ModelLoader("/app/model.pth")
+    s3_path = os.environ.get("S3_MODEL_PATH", "").strip()
+
+    if s3_path:
+        # Production: pull weights from S3 (path provided by Lambda → CI/CD)
+        _download_from_s3(s3_path, LOCAL_MODEL_PATH)
+    elif os.path.exists(LOCAL_MODEL_PATH):
+        # Local dev: use pre-existing weights
+        print(f"ℹ️  S3_MODEL_PATH not set — using local weights at {LOCAL_MODEL_PATH}")
+    else:
+        raise RuntimeError(
+            "No model weights available: S3_MODEL_PATH is not set and "
+            f"{LOCAL_MODEL_PATH} does not exist."
+        )
+
+    print("🚀 Loading model…")
+    model = ModelLoader(LOCAL_MODEL_PATH)
     print("✅ Model loaded successfully")
 
 
@@ -92,8 +126,13 @@ def run_explain(rgb, ela, orig_img):
 # =========================
 # Health check
 # =========================
+@app.get("/health")
+def health_check():
+    return {"status": "ok", "model_loaded": model is not None}
+
+
 @app.get("/")
-def health():
+def root():
     return {
         "status": "running",
         "message": "Forgery Detection API is live"

@@ -5,6 +5,7 @@
 # ─────────────────────────────────────────────────────────────────
 
 locals {
+  # ECR repos exist for all 4 services; ALB only exposes frontend
   services = ["frontend", "api-gateway", "text-service", "image-service"]
   ecr_registry = "${var.aws_account_id}.dkr.ecr.${var.aws_region}.amazonaws.com"
 }
@@ -157,14 +158,8 @@ resource "aws_security_group" "ec2" {
     security_groups = [aws_security_group.alb.id]
   }
 
-  # API Gateway port — only from ALB
-  ingress {
-    description     = "API Gateway from ALB"
-    from_port       = 5000
-    to_port         = 5000
-    protocol        = "tcp"
-    security_groups = [aws_security_group.alb.id]
-  }
+  # NOTE: API Gateway (port 5000) is NOT exposed via ALB.
+  # The frontend container reaches api-gateway via Docker's deepfake-net network.
 
   # SSH from anywhere (restrict to your IP in production!)
   ingress {
@@ -254,30 +249,12 @@ resource "aws_lb_target_group" "frontend" {
   tags = { Name = "deepfake-frontend-tg" }
 }
 
-# ── Target Group: API Gateway (:5000) ────────────────────────────
-resource "aws_lb_target_group" "api_gateway" {
-  name        = "deepfake-api-gateway-tg"
-  port        = 5000
-  protocol    = "HTTP"
-  vpc_id      = var.vpc_id
-  target_type = "instance"
+# API Gateway target group REMOVED — api-gateway is internal only.
+# Traffic flow: Internet → ALB → Frontend (port 3000)
+#               Frontend container → api-gateway (Docker network, no ALB)
+#               api-gateway → text-service / image-service (Docker network)
 
-  health_check {
-    enabled             = true
-    path                = "/health"
-    port                = "5000"
-    protocol            = "HTTP"
-    healthy_threshold   = 2
-    unhealthy_threshold = 3
-    timeout             = 5
-    interval            = 30
-    matcher             = "200"
-  }
-
-  tags = { Name = "deepfake-api-gateway-tg" }
-}
-
-# ── Register EC2 instances in both target groups ─────────────────
+# ── Register EC2 instances in the frontend target group only ─────
 resource "aws_lb_target_group_attachment" "frontend" {
   count            = 2
   target_group_arn = aws_lb_target_group.frontend.arn
@@ -285,41 +262,18 @@ resource "aws_lb_target_group_attachment" "frontend" {
   port             = 3000
 }
 
-resource "aws_lb_target_group_attachment" "api_gateway" {
-  count            = 2
-  target_group_arn = aws_lb_target_group.api_gateway.arn
-  target_id        = aws_instance.app[count.index].id
-  port             = 5000
-}
-
 # ── ALB Listener: HTTP :80 ────────────────────────────────────────
-# Default action: forward to frontend
-# Path rule: /api/* → api-gateway
+# Single rule: all traffic → frontend target group.
+# The frontend container (Nginx) proxies /api/* to api-gateway internally.
 resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.main.arn
   port              = 80
   protocol          = "HTTP"
 
-  # Default: serve frontend
   default_action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.frontend.arn
   }
 }
-
-# Path-based rule: /api/* → api-gateway target group
-resource "aws_lb_listener_rule" "api" {
-  listener_arn = aws_lb_listener.http.arn
-  priority     = 10
-
-  condition {
-    path_pattern {
-      values = ["/api/*"]
-    }
-  }
-
-  action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.api_gateway.arn
-  }
-}
+# NOTE: The /api/* listener rule has been removed.
+# Routing is now handled by Nginx inside the frontend container.

@@ -1,6 +1,6 @@
 import os
+import boto3
 import torch
-import gdown
 
 from fastapi import FastAPI
 from transformers import AutoTokenizer
@@ -12,13 +12,29 @@ from app.utils import arabert_preprocess
 app = FastAPI()
 
 MODEL_PATH = "/app/model.pt"
-DRIVE_URL = "https://drive.google.com/uc?id=1CmBumK7XU8DkMP4mvFeXo7OnPAj5wV1y"
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 model = None
 tokenizer = None
 explainer = None
+
+
+# =========================
+# S3 helper
+# =========================
+def _parse_s3_uri(s3_uri: str):
+    """Parse 's3://bucket/key/path' → (bucket, key)."""
+    s3_uri = s3_uri.replace("s3://", "", 1)
+    bucket, _, key = s3_uri.partition("/")
+    return bucket, key
+
+
+def _download_from_s3(s3_path: str, local_path: str) -> None:
+    print(f"⬇️  Downloading model from {s3_path} …")
+    bucket, key = _parse_s3_uri(s3_path)
+    boto3.client("s3").download_file(bucket, key, local_path)
+    print(f"✅ Model downloaded to {local_path}")
 
 
 # =========================
@@ -30,15 +46,19 @@ def load_everything():
 
     print(f"🔥 Startup PID: {os.getpid()}")
 
-    # safe download
+    s3_path = os.environ.get("S3_MODEL_PATH", "").strip()
+
     if not os.path.exists(MODEL_PATH):
-        tmp_path = MODEL_PATH + ".tmp"
-
-        if not os.path.exists(tmp_path):
-            print("⬇️ Downloading model...")
-            gdown.download(DRIVE_URL, tmp_path, quiet=False)
-
-        os.rename(tmp_path, MODEL_PATH)
+        if s3_path:
+            # Production: download weights from S3 (path injected by Lambda → CI/CD)
+            _download_from_s3(s3_path, MODEL_PATH)
+        else:
+            raise RuntimeError(
+                "No model weights available: S3_MODEL_PATH is not set and "
+                f"{MODEL_PATH} does not exist."
+            )
+    else:
+        print(f"ℹ️  Using existing weights at {MODEL_PATH}")
 
     print("🧠 Loading model...")
 
@@ -148,6 +168,11 @@ def generate_natural_explanation(explanation, prediction):
 # =========================
 # Routes
 # =========================
+@app.get("/health")
+def health_check():
+    return {"status": "ok", "model_loaded": model is not None}
+
+
 @app.get("/")
 def home():
     return {"message": "Model is running 🚀"}

@@ -4,7 +4,7 @@ torch
 torchvision
 pillow
 numpy
-gdown
+boto3
 python-multipart
 opencv-python-headless
 grad-cam

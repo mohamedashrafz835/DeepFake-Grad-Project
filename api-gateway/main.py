@@ -5,14 +5,19 @@ import asyncio
 
 app = FastAPI(title="API Gateway")
 
+import os
+
 # =========================
 # Services URLs
 # =========================
-TEXT_SERVICE_URL = "http://text-service:8000/predict"
-TEXT_SERVICE_EXPLAIN_URL = "http://text-service:8000/predict_with_explanation"
+TEXT_BASE_URL = os.getenv("TEXT_SERVICE_URL", "http://text-service:8000")
+IMAGE_BASE_URL = os.getenv("IMAGE_SERVICE_URL", "http://image-service:8000")
 
-IMAGE_SERVICE_URL = "http://image-service:8000/detect"
-IMAGE_SERVICE_EXPLAIN_URL = "http://image-service:8000/detect-explain"
+TEXT_SERVICE_URL = f"{TEXT_BASE_URL}/predict"
+TEXT_SERVICE_EXPLAIN_URL = f"{TEXT_BASE_URL}/predict_with_explanation"
+
+IMAGE_SERVICE_URL = f"{IMAGE_BASE_URL}/detect"
+IMAGE_SERVICE_EXPLAIN_URL = f"{IMAGE_BASE_URL}/detect-explain"
 
 
 # =========================

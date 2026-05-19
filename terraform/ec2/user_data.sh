@@ -89,10 +89,10 @@ services:
     image: ${ecr_registry}/deepfake/api-gateway:latest
     container_name: deepfake-api-gateway
     ports:
-      - "5000:5000"
+      - "5000:8000"
     environment:
-      - TEXT_SERVICE_URL=http://text-service:5001
-      - IMAGE_SERVICE_URL=http://image-service:5002
+      - TEXT_SERVICE_URL=http://text-service:8000
+      - IMAGE_SERVICE_URL=http://image-service:8000
     depends_on:
       - text-service
       - image-service
@@ -100,7 +100,7 @@ services:
       - deepfake-net
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -110,12 +110,15 @@ services:
     image: ${ecr_registry}/deepfake/text-service:latest
     container_name: deepfake-text-service
     ports:
-      - "5001:5001"
+      - "5001:8000"
+    environment:
+      - S3_MODEL_PATH=
+      - AWS_DEFAULT_REGION=${aws_region}
     networks:
       - deepfake-net
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -125,12 +128,15 @@ services:
     image: ${ecr_registry}/deepfake/image-service:latest
     container_name: deepfake-image-service
     ports:
-      - "5002:5002"
+      - "5002:8000"
+    environment:
+      - S3_MODEL_PATH=
+      - AWS_DEFAULT_REGION=${aws_region}
     networks:
       - deepfake-net
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5002/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3

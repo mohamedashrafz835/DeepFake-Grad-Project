@@ -1,8 +1,14 @@
-name: CD — Deploy Text Service
+name: CI/CD — Text Service
 
 # ── Triggers ──────────────────────────────────────────────────────
-# 1. Manually (from GitHub UI)
-# 2. Via Lambda workflow_dispatch API call (triggered by S3 upload)
+# Triggered ONLY by the Lambda function via the GitHub Actions API
+# (workflow_dispatch) when new text-service weights are uploaded to S3.
+#
+# Lambda parses the S3 key (text-service/<version>/model.pt),
+# then calls: POST /repos/.../actions/workflows/text-service-deploy.yml/dispatches
+# with inputs: service_name, model_version, s3_path
+#
+# Lambda does NOT trigger frontend-cicd.yml or api-gateway-cicd.yml.
 on:
   workflow_dispatch:
     inputs:
@@ -18,20 +24,63 @@ on:
         required: true
 
 env:
-  AWS_REGION:  us-east-1
-  SERVICE:     text-service
-  IMAGE_TAG:   latest           # could also use model_version as tag
+  AWS_REGION: us-east-1
+  SERVICE:    text-service
 
 jobs:
-  # ── Deploy to both EC2 instances (sequentially for rolling deploy) ─
+  # ── 1. Build & Push new image to ECR ──────────────────────────────
+  build:
+    name: Build & Push text-service to ECR
+    runs-on: ubuntu-latest
+
+    outputs:
+      ecr_registry: ${{ steps.ecr-login.outputs.registry }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set image metadata
+        id: meta
+        run: |
+          REGISTRY="${{ steps.ecr-login.outputs.registry }}"
+          MODEL_TAG="${{ inputs.model_version }}"
+          echo "image=${REGISTRY}/deepfake/text-service"              >> $GITHUB_OUTPUT
+          echo "full=${REGISTRY}/deepfake/text-service:${MODEL_TAG}" >> $GITHUB_OUTPUT
+          echo "tag=${MODEL_TAG}"                                      >> $GITHUB_OUTPUT
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            -t "${{ steps.meta.outputs.full }}" \
+            -t "${{ steps.meta.outputs.image }}:latest" \
+            ./Text_Service
+
+      - name: Push Docker image to ECR
+        run: |
+          docker push "${{ steps.meta.outputs.full }}"
+          docker push "${{ steps.meta.outputs.image }}:latest"
+          echo "✅ Pushed text-service:${{ steps.meta.outputs.tag }} → ECR"
+
+  # ── 2. Rolling deploy to both EC2s (sequentially) ─────────────────
   deploy:
     name: Deploy text-service to EC2 (${{ matrix.instance }})
+    needs: build
     runs-on: ubuntu-latest
 
     strategy:
-      # IMPORTANT: max-parallel: 1 ensures true rolling deploy
-      # EC2-1 is updated and health-checked before EC2-2 is touched
-      max-parallel: 1
+      max-parallel: 1   # EC2-1 fully health-checked before EC2-2 is touched
       matrix:
         include:
           - instance: EC2-1
@@ -40,9 +89,6 @@ jobs:
             host_secret: EC2_2_HOST
 
     steps:
-      - name: Checkout (for rolling-deploy.sh)
-        uses: actions/checkout@v4
-
       - name: Log deployment intent
         run: |
           echo "═══════════════════════════════════════════════════════"
@@ -59,62 +105,53 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region:            ${{ env.AWS_REGION }}
 
-      - name: Login to Amazon ECR (get fresh image tag)
+      - name: Login to Amazon ECR
         id: ecr-login
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Copy rolling-deploy.sh to EC2 and deploy
+      - name: SSH — Rolling deploy text-service
         uses: appleboy/ssh-action@v1.0.3
         with:
           host:     ${{ secrets[matrix.host_secret] }}
           username: ec2-user
           key:      ${{ secrets.EC2_SSH_PRIVATE_KEY }}
-          timeout:  120s
+          timeout:  180s
           script: |
             set -euo pipefail
 
-            # ── Write updated .env with latest ECR registry ─────
             ECR_REGISTRY="${{ steps.ecr-login.outputs.registry }}"
-            echo "ECR_REGISTRY=${ECR_REGISTRY}" >> /opt/deepfake/.env
+            IMAGE="${ECR_REGISTRY}/deepfake/text-service:latest"
+            S3_MODEL_PATH="${{ inputs.s3_path }}"
+            PROD_PORT=8500
+            TEMP_PORT=18500
 
-            # ── Copy deploy script (ensures latest version) ─────
-            cat > /tmp/rolling-deploy.sh << 'SCRIPT'
-            ${{ toJSON(steps.checkout.outputs) }}
-            SCRIPT
+            # Authenticate Docker with ECR
+            aws ecr get-login-password --region "${{ env.AWS_REGION }}" \
+              | docker login --username AWS --password-stdin "${ECR_REGISTRY}"
 
-            # Pull the script from the checked-out repo via SCP instead:
-            # (The SSH action runs inline — we inline the script content)
-            mkdir -p /opt/deepfake/scripts
+            # Ensure docker network exists
+            docker network inspect my-network >/dev/null 2>&1 \
+              || docker network create my-network
 
-            # ── Run rolling deploy ──────────────────────────────
-            export AWS_REGION="${{ env.AWS_REGION }}"
-            export ECR_REGISTRY="$ECR_REGISTRY"
+            # Pull latest image (built with new code above)
+            docker pull "${IMAGE}"
 
-            # Ensure deepfake-net docker network exists
-            docker network inspect deepfake-net >/dev/null 2>&1 \
-              || docker network create deepfake-net
-
-            # Pull latest text-service image
-            docker pull "${ECR_REGISTRY}/deepfake/text-service:${{ env.IMAGE_TAG }}"
-
-            # Rolling deploy: temp port → health check → swap
-            PROD_PORT=5001
-            TEMP_PORT=15001
-            IMAGE="${ECR_REGISTRY}/deepfake/text-service:${{ env.IMAGE_TAG }}"
-
+            # Start new container on temp port for health check
             echo "Starting new container on temp port ${TEMP_PORT}..."
-            docker rm -f deepfake-text-service-new 2>/dev/null || true
+            docker rm -f text-service-new 2>/dev/null || true
             docker run -d \
-              --name deepfake-text-service-new \
-              --network deepfake-net \
-              -p "${TEMP_PORT}:${PROD_PORT}" \
+              --name text-service-new \
+              --network my-network \
+              -p "${TEMP_PORT}:8000" \
               --restart no \
-              "$IMAGE"
+              -e S3_MODEL_PATH="${S3_MODEL_PATH}" \
+              -e AWS_DEFAULT_REGION="${{ env.AWS_REGION }}" \
+              "${IMAGE}"
 
             # Health check loop
             HEALTHY=false
             for i in $(seq 1 12); do
-              sleep 5
+              sleep 10
               STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
                 --max-time 5 http://localhost:${TEMP_PORT}/health 2>/dev/null || echo "000")
               echo "  Attempt $i: HTTP $STATUS"
@@ -126,20 +163,22 @@ jobs:
 
             if [[ "$HEALTHY" != "true" ]]; then
               echo "❌ Health check failed — rolling back"
-              docker rm -f deepfake-text-service-new
+              docker rm -f text-service-new
               exit 1
             fi
 
-            echo "✅ New container is healthy — swapping..."
-            docker rm -f deepfake-text-service 2>/dev/null || true
-            docker rm -f deepfake-text-service-new
+            echo "✅ New container is healthy — swapping into production..."
+            docker rm -f text-service 2>/dev/null || true
+            docker rm -f text-service-new
 
             docker run -d \
-              --name deepfake-text-service \
-              --network deepfake-net \
-              -p "${PROD_PORT}:${PROD_PORT}" \
+              --name text-service \
+              --network my-network \
+              -p "${PROD_PORT}:8000" \
               --restart unless-stopped \
-              "$IMAGE"
+              -e S3_MODEL_PATH="${S3_MODEL_PATH}" \
+              -e AWS_DEFAULT_REGION="${{ env.AWS_REGION }}" \
+              "${IMAGE}"
 
             sleep 5
             FINAL=$(curl -s -o /dev/null -w "%{http_code}" \
