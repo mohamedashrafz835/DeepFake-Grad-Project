@@ -89,7 +89,7 @@ def trigger_github_workflow(
     )
 
     payload = json.dumps({
-        "ref": "main",                       # branch to run the workflow on
+        "ref": "staging",                    # branch to run the workflow on
         "inputs": {
             "service_name":    service_name,
             "model_version":   model_version,
