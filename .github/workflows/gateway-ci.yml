@@ -2,7 +2,7 @@ name: CI — Build & Push API Gateway
 
 on:
   push:
-    branches: [main]
+    branches: [multistage]
     paths:
       - "api-gateway/**"       # only triggers when api-gateway/ changes
   workflow_dispatch:           # manual trigger from GitHub UI

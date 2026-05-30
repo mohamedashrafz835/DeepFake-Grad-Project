@@ -2,7 +2,7 @@ name: CI — Build & Push Text Service
 
 on:
   push:
-    branches: [main]
+    branches: [multistage]
     paths:
       - "Text_Service/**"      # only triggers when Text_Service/ changes
   workflow_dispatch:           # manual trigger from GitHub UI

@@ -2,7 +2,7 @@ name: CI — Build & Push Frontend
 
 on:
   push:
-    branches: [main]
+    branches: [multistage]
     paths:
       - "Frontend/**"          # only triggers when Frontend/ changes
   workflow_dispatch:           # manual trigger from GitHub UI
