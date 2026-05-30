@@ -9,11 +9,12 @@ data "aws_caller_identity" "current" {}
 module "vpc" {
   source = "./vpc"
 
-  aws_region          = var.aws_region
-  vpc_cidr            = "10.0.0.0/16"
-  public_subnet_cidrs = ["10.0.1.0/24", "10.0.2.0/24"]
-  azs                 = ["${var.aws_region}a", "${var.aws_region}b"]
-  cluster_name        = var.cluster_name
+  aws_region           = var.aws_region
+  vpc_cidr             = "10.0.0.0/16"
+  public_subnet_cidrs  = ["10.0.1.0/24", "10.0.2.0/24"]
+  private_subnet_cidrs = ["10.0.3.0/24", "10.0.4.0/24"]
+  azs                  = ["${var.aws_region}a", "${var.aws_region}b"]
+  cluster_name         = var.cluster_name
 }
 
 # ── Lambda (must come before S3 so we have the ARN) ──────────────
@@ -34,11 +35,17 @@ module "s3" {
   lambda_arn  = module.lambda.lambda_arn
 }
 
+# ── EKS Cluster + Node Groups ─────────────────────────────────────
 module "eks" {
   source = "./eks"
-  cluster_name = var.cluster_name
+
+  cluster_name    = var.cluster_name
   cluster_version = var.cluster_version
-  subnets_id = module.vpc.public_subnet_ids
-  vpc_id = module.vpc.vpc_id
+  vpc_id          = module.vpc.vpc_id
+
+  # Control plane sees all subnets; nodes are placed in private only
+  public_subnet_ids  = module.vpc.public_subnet_ids
+  private_subnet_ids = module.vpc.private_subnet_ids
+
   node_groups = var.node_groups
 }

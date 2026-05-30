@@ -1,5 +1,8 @@
 # ─────────────────────────────────────────────────────────────────
 # EKS Module — Managed Node Group
+#
+# Nodes are placed ONLY in private subnets.
+# Outbound internet (ECR pulls, SSM, etc.) goes via the NAT Gateway.
 # ─────────────────────────────────────────────────────────────────
 
 # ── IAM Role for Worker Nodes ─────────────────────────────────────
@@ -38,7 +41,9 @@ resource "aws_eks_node_group" "main" {
   cluster_name    = aws_eks_cluster.main.name
   node_group_name = each.key
   node_role_arn   = aws_iam_role.node.arn
-  subnet_ids      = var.subnets_id
+
+  # ✅ Worker nodes go into PRIVATE subnets only
+  subnet_ids = var.private_subnet_ids
 
   instance_types = each.value.instance_types
   capacity_type  = each.value.capacity_type

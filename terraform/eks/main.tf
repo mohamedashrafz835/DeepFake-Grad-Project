@@ -1,5 +1,8 @@
 # ─────────────────────────────────────────────────────────────────
 # EKS Module — Cluster Control Plane
+#
+# VPC config includes BOTH public + private subnets so the control
+# plane can communicate with nodes and internet-facing LBs.
 # ─────────────────────────────────────────────────────────────────
 
 resource "aws_eks_cluster" "main" {
@@ -14,7 +17,9 @@ resource "aws_eks_cluster" "main" {
   role_arn = aws_iam_role.cluster.arn
 
   vpc_config {
-    subnet_ids = var.subnets_id
+    # Register both subnet tiers so the control plane endpoint is reachable
+    # from both the ALB (public) and nodes (private)
+    subnet_ids = concat(var.public_subnet_ids, var.private_subnet_ids)
   }
 
   tags = {

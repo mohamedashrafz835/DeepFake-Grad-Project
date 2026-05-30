@@ -14,8 +14,13 @@ variable "vpc_id" {
   type        = string
 }
 
-variable "subnets_id" {
-  description = "Subnet IDs for the cluster and node groups"
+variable "public_subnet_ids" {
+  description = "Public subnet IDs — registered with the cluster VPC config for internet-facing ALBs"
+  type        = list(string)
+}
+
+variable "private_subnet_ids" {
+  description = "Private subnet IDs — where EKS worker nodes are placed"
   type        = list(string)
 }
 
