@@ -1,0 +1,22 @@
+# ─────────────────────────────────────────────────────────────────
+# Image Service — ClusterIP (internal only)
+#
+# Only reachable by the API Gateway inside the cluster.
+# The service name MUST be "image-service" to match api-gateway/main.py:
+#   IMAGE_SERVICE_URL = "http://image-service:8000/detect"
+# ─────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: image-service
+  labels:
+    app: image-service
+spec:
+  type: ClusterIP
+  selector:
+    app: image-service
+  ports:
+    - name: http
+      protocol: TCP
+      port: 8000
+      targetPort: 8000

@@ -1,0 +1,70 @@
+# ─────────────────────────────────────────────────────────────────
+# Text Service Deployment
+# AraBERT + CNN + LSTM with LIME — FastAPI on port 8000
+# Replicas: 2 (one per node)
+#
+# MODEL_S3_PATH env var → set by the Lambda-triggered CI/CD workflow
+# when a new model is uploaded to S3.
+# ─────────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: text-service
+  labels:
+    app: text-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: text-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app: text-service
+    spec:
+      containers:
+        - name: text-service
+          image: <AWS_ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/deepfake/text-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+          env:
+            - name: MODEL_S3_PATH
+              # Update to point to the latest model version, e.g.:
+              # s3://ml-models-deepfake-<ACCOUNT_ID>/text-service/v1/model.pt
+              value: "s3://ml-models-deepfake-<AWS_ACCOUNT_ID>/text-service/v1/model.pt"
+            - name: AWS_DEFAULT_REGION
+              value: "us-east-1"
+            - name: PYTHONPATH
+              value: "/app"
+            - name: OMP_NUM_THREADS
+              value: "1"
+            - name: MKL_NUM_THREADS
+              value: "1"
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2000m"
+              memory: "4Gi"           # AraBERT transformer needs more RAM
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            # AraBERT loading + tokenizer init can take 2-3 min
+            initialDelaySeconds: 180
+            periodSeconds: 15
+            failureThreshold: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 200
+            periodSeconds: 30
+            failureThreshold: 3

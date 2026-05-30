@@ -1,0 +1,22 @@
+# ─────────────────────────────────────────────────────────────────
+# Text Service — ClusterIP (internal only)
+#
+# Only reachable by the API Gateway inside the cluster.
+# The service name MUST be "text-service" to match api-gateway/main.py:
+#   TEXT_SERVICE_URL = "http://text-service:8000/predict"
+# ─────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: text-service
+  labels:
+    app: text-service
+spec:
+  type: ClusterIP
+  selector:
+    app: text-service
+  ports:
+    - name: http
+      protocol: TCP
+      port: 8000
+      targetPort: 8000
