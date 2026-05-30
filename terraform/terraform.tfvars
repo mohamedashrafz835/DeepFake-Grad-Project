@@ -7,7 +7,7 @@ cluster_version = "1.31"
 
 node_groups = {
   "default" = {
-    instance_types = ["t3.large"]
+    instance_types = ["m7i-flex.large"]
     capacity_type  = "ON_DEMAND"
     scaling_config = {
       desired_size = 2
