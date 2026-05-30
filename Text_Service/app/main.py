@@ -40,7 +40,7 @@ def load_everything():
 
         os.rename(tmp_path, MODEL_PATH)
 
-    print("🧠 Loading model...")
+    print("🧠 Loading model... ")
 
     model = AraBertCNNLSTMClassifier()
 
