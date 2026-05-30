@@ -30,7 +30,7 @@ spec:
     spec:
       containers:
         - name: image-service
-          image: 835835/forgery-api:latest
+          image: 835835/m:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8000

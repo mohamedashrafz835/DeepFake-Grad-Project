@@ -1,0 +1,44 @@
+name: CI — Build & Push Frontend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Frontend/**"          # only triggers when Frontend/ changes
+  workflow_dispatch:           # manual trigger from GitHub UI
+
+env:
+  IMAGE_NAME: 835835/x
+
+jobs:
+  build-and-push:
+    name: Build & Push frontend → Docker Hub
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: 835835
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build & push
+        uses: docker/build-push-action@v5
+        with:
+          context: ./Frontend
+          file: ./Frontend/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:latest
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Print image digest
+        run: echo "Pushed ${{ env.IMAGE_NAME }}:latest (${{ github.sha }})"
