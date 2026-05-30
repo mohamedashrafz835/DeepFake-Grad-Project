@@ -19,3 +19,8 @@ variable "azs" {
   description = "Availability zones to deploy subnets into"
   type        = list(string)
 }
+
+variable "cluster_name" {
+  description = "EKS cluster name — used for required subnet tags"
+  type        = string
+}

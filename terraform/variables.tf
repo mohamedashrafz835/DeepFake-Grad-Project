@@ -4,11 +4,6 @@ variable "aws_region" {
   default     = "us-east-1"
 }
 
-variable "key_pair_name" {
-  description = "Name of an existing EC2 key pair for SSH access"
-  type        = string
-}
-
 variable "github_owner" {
   description = "GitHub username or organization that owns the repository"
   type        = string
@@ -19,15 +14,40 @@ variable "github_repo" {
   type        = string
 }
 
-variable "ami_id" {
-  description = "AMI ID for EC2 instances (Amazon Linux 2023 in us-east-1)"
+# ── EKS ──────────────────────────────────────────────────────────
+
+variable "cluster_name" {
+  description = "Name of the EKS cluster"
   type        = string
-  # Amazon Linux 2023 (us-east-1) — update if deploying to a different region
-  default = "ami-0c02fb55956c7d316"
+  default     = "deepfake-cluster"
 }
 
-variable "instance_type" {
-  description = "EC2 instance type"
+variable "cluster_version" {
+  description = "Kubernetes version for the EKS cluster"
   type        = string
-  default     = "t3.medium"
+  default     = "1.31"
+}
+
+variable "node_groups" {
+  description = "Map of EKS managed node group configurations"
+  type = map(object({
+    instance_types = list(string)
+    capacity_type  = string
+    scaling_config = object({
+      desired_size = number
+      max_size     = number
+      min_size     = number
+    })
+  }))
+  default = {
+    "default" = {
+      instance_types = ["t3.medium"]
+      capacity_type  = "ON_DEMAND"
+      scaling_config = {
+        desired_size = 2
+        max_size     = 3
+        min_size     = 2
+      }
+    }
+  }
 }

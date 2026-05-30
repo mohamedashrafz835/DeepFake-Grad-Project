@@ -1,6 +1,9 @@
 # ─────────────────────────────────────────────────────────────────
 # VPC Module
 # Creates: VPC, 2 public subnets (different AZs), IGW, route table
+#
+# Public subnets are tagged for the AWS Load Balancer Controller so
+# that internet-facing ALBs can be automatically provisioned.
 # ─────────────────────────────────────────────────────────────────
 
 resource "aws_vpc" "main" {
@@ -23,7 +26,10 @@ resource "aws_subnet" "public" {
   map_public_ip_on_launch = true
 
   tags = {
-    Name = "deepfake-public-subnet-${count.index + 1}"
+    Name                                        = "deepfake-public-subnet-${count.index + 1}"
+    # Required by the AWS Load Balancer Controller for internet-facing ALBs
+    "kubernetes.io/role/elb"                    = "1"
+    "kubernetes.io/cluster/${var.cluster_name}" = "shared"
   }
 }
 
