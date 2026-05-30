@@ -27,7 +27,7 @@ spec:
     spec:
       containers:
         - name: api-gateway
-          image: <AWS_ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/deepfake/api-gateway:latest
+          image: 835835/apigateway:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8000
