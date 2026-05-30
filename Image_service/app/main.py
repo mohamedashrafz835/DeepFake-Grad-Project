@@ -38,7 +38,7 @@ def load_model():
     global model
     print("🚀 Loading model...")
     model = ModelLoader("/app/model.pth")
-    print("✅ Model loaded successfully")
+    print("✅ Model loaded successfully ")
 
 
 # =========================
