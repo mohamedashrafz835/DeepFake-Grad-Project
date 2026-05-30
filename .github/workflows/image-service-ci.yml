@@ -8,7 +8,7 @@ on:
   workflow_dispatch:           # manual trigger from GitHub UI
 
 env:
-  IMAGE_NAME: 835835/m
+  IMAGE_NAME: 835835/mz
 
 jobs:
   build-and-push:
