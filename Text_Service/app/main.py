@@ -28,7 +28,7 @@ explainer = None
 def load_everything():
     global model, tokenizer, explainer
 
-    print(f"🔥 Startup PID: {os.getpid()}")
+    print(f"🔥  Startup PID: {os.getpid()}")
 
     # safe download
     if not os.path.exists(MODEL_PATH):
