@@ -5,7 +5,7 @@ from torchvision import models
 
 
 # =========================
-# SE Block
+# SE BLOCK
 # =========================
 class SEBlock(nn.Module):
     def __init__(self, c, r=16):
@@ -24,7 +24,7 @@ class SEBlock(nn.Module):
 
 
 # =========================
-# ELA Stream
+# ELA STREAM
 # =========================
 class ELAStream(nn.Module):
     def __init__(self, out=256):
@@ -49,11 +49,12 @@ class ELAStream(nn.Module):
         self.fc = nn.Linear(256, out)
 
     def forward(self, x):
-        return F.gelu(self.fc(self.net(x).flatten(1)))
+        x = self.net(x).flatten(1)
+        return F.gelu(self.fc(x))
 
 
 # =========================
-# Mask Decoder (NOT used in inference)
+# MASK DECODER (OPTIONAL)
 # =========================
 class MaskDecoder(nn.Module):
     def __init__(self, in_c=1280):
@@ -71,21 +72,20 @@ class MaskDecoder(nn.Module):
 
 
 # =========================
-# MAIN MODEL (FIXED)
+# MAIN MODEL
 # =========================
 class ForgeryDetector(nn.Module):
     def __init__(self):
         super().__init__()
 
-        b0 = models.efficientnet_b0(weights=None)
+        backbone = models.efficientnet_b0(weights=None)
 
-        self.rgb_features = b0.features
+        self.rgb_features = backbone.features
         self.rgb_pool = nn.AdaptiveAvgPool2d(1)
 
         self.ela_stream = ELAStream(256)
         self.mask_decoder = MaskDecoder(1280)
 
-        # 🔥 EXACT SAME AS TRAINING (IMPORTANT)
         self.classifier = nn.Sequential(
             nn.Dropout(0.4),
             nn.Linear(1280 + 256, 512),
@@ -111,19 +111,16 @@ class ForgeryDetector(nn.Module):
 
 
 # =========================
-# LOADER (FIXED SAFE VERSION)
+# MODEL LOADER (ROBUST)
 # =========================
 class ModelLoader:
-    def __init__(self, model_path="/app/model.pth"):
+    def __init__(self, model_path: str):
         self.device = "cpu"
-
-        print("🚀 Loading model...")
 
         self.model = ForgeryDetector().to(self.device)
 
         checkpoint = torch.load(model_path, map_location=self.device)
 
-        # handle different formats
         if isinstance(checkpoint, dict):
             if "model_state_dict" in checkpoint:
                 state = checkpoint["model_state_dict"]
@@ -134,14 +131,12 @@ class ModelLoader:
         else:
             raise ValueError("Invalid checkpoint format")
 
-        # 🔥 IMPORTANT: strict=True to catch mismatch early
         self.model.load_state_dict(state, strict=True)
-
         self.model.eval()
-
-        print("✅ Model loaded successfully")
 
     def predict(self, rgb, ela):
         with torch.no_grad():
             logits = self.model(rgb, ela)
-            return torch.softmax(logits, dim=1)
+            probs = torch.softmax(logits, dim=1)
+
+        return probs
