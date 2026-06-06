@@ -1,14 +1,18 @@
 fastapi
 uvicorn[standard]
 
+torch
+torchvision
+
 pillow
 numpy
+
 gdown
 python-multipart
-
-scikit-learn
-tqdm
 
 opencv-python-headless
 
 pytorch-grad-cam
+
+scikit-learn
+tqdm
