@@ -27,8 +27,7 @@ RUN pip install --no-cache-dir \
     --index-url https://download.pytorch.org/whl/cpu
 
 # Install remaining dependencies (NO DEPS to avoid conflicts)
-RUN pip install --no-cache-dir --no-deps -r requirements.txt
-
+RUN pip install --no-cache-dir -r requirements.txt
 
 # ===================================================
 # Stage 2: Runner
