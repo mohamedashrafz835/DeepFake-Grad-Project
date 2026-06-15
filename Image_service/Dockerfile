@@ -1,11 +1,11 @@
-# ===================================================
+ #===================================================
 # Stage 1: Builder
 # ===================================================
 FROM python:3.10-slim AS builder
 
 WORKDIR /app
 
-# System dependencies
+# Build dependencies only (removed from final image)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     git \
@@ -15,19 +15,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN python -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Copy requirements first
+# Copy requirements first (better caching)
 COPY requirements.txt .
 
-# Upgrade pip tooling
-RUN pip install --upgrade pip setuptools wheel
+# Upgrade pip
+RUN pip install --upgrade pip
 
-# Install PyTorch CPU FIRST (fixed & stable)
+# Install PyTorch CPU first (important for ML stack stability)
 RUN pip install --no-cache-dir \
     torch torchvision \
     --index-url https://download.pytorch.org/whl/cpu
 
-# Install remaining dependencies (NO DEPS to avoid conflicts)
+# Install remaining dependencies
 RUN pip install --no-cache-dir -r requirements.txt
+
 
 # ===================================================
 # Stage 2: Runner
@@ -36,33 +37,35 @@ FROM python:3.10-slim AS runner
 
 WORKDIR /app
 
-# Runtime dependencies (IMPORTANT for cv2 + torch)
+# Runtime system dependencies (required for torch, cv2, grad-cam)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
     libgl1 \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy venv
+# Copy virtual environment from builder
 COPY --from=builder /opt/venv /opt/venv
 
-# Copy app
+# Copy application code
 COPY app/ ./app/
 COPY start.sh ./start.sh
 
+# Make start script executable
 RUN chmod +x start.sh
 
 # Activate venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Python config
+# Fix Python imports
 ENV PYTHONPATH=/app
-ENV PYTHONUNBUFFERED=1
 
-# Performance tuning
+# Performance tuning for ML inference
 ENV OMP_NUM_THREADS=1
 ENV MKL_NUM_THREADS=1
+ENV PYTHONUNBUFFERED=1
 
 EXPOSE 8000
 
+# Run via start script (handles model download + API start)
 CMD ["./start.sh"]
