@@ -20,7 +20,7 @@ model = None
 # FIXED threshold (temporary)
 # (better: calibrate later)
 # =========================
-THRESHOLD = 0.50
+THRESHOLD = 0.384
 
 
 # =========================
