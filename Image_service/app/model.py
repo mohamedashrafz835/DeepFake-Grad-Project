@@ -1,142 +1,145 @@
+from fastapi import FastAPI, UploadFile, File
+from PIL import Image
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from torchvision import models
+import numpy as np
+import cv2
+import base64
+
+from pytorch_grad_cam import GradCAM
+from pytorch_grad_cam.utils.image import show_cam_on_image
+
+from app.model import ModelLoader
+from app.utils import preprocess
+
+app = FastAPI(title="Forgery Detection API")
+
+model = None
+THRESHOLD = 0.384
 
 
 # =========================
-# SE BLOCK
+# Wrapper for Grad-CAM
 # =========================
-class SEBlock(nn.Module):
-    def __init__(self, c, r=16):
+class WrapperModel(torch.nn.Module):
+    def __init__(self, model, ela):
         super().__init__()
-        self.se = nn.Sequential(
-            nn.AdaptiveAvgPool2d(1),
-            nn.Flatten(),
-            nn.Linear(c, max(c // r, 4)),
-            nn.ReLU(),
-            nn.Linear(max(c // r, 4), c),
-            nn.Sigmoid()
-        )
+        self.model = model
+        self.ela = ela
 
     def forward(self, x):
-        return x * self.se(x).view(x.size(0), x.size(1), 1, 1)
+        return self.model(x, self.ela)
 
 
 # =========================
-# ELA STREAM
+# Load model once
 # =========================
-class ELAStream(nn.Module):
-    def __init__(self, out=256):
-        super().__init__()
-
-        def blk(ci, co, s):
-            return nn.Sequential(
-                nn.Conv2d(ci, co, 3, stride=s, padding=1, bias=False),
-                nn.BatchNorm2d(co),
-                nn.GELU(),
-                SEBlock(co)
-            )
-
-        self.net = nn.Sequential(
-            blk(3, 32, 1),
-            blk(32, 64, 2),
-            blk(64, 128, 2),
-            blk(128, 256, 2),
-            nn.AdaptiveAvgPool2d(1)
-        )
-
-        self.fc = nn.Linear(256, out)
-
-    def forward(self, x):
-        x = self.net(x).flatten(1)
-        return F.gelu(self.fc(x))
+@app.on_event("startup")
+def load_model():
+    global model
+    print("🚀 Loading model...")
+    model = ModelLoader("/app/model.pth")
+    print("✅ Model loaded successfully")
 
 
 # =========================
-# MASK DECODER (OPTIONAL)
+# Shared inference
 # =========================
-class MaskDecoder(nn.Module):
-    def __init__(self, in_c=1280):
-        super().__init__()
-        self.dec = nn.Sequential(
-            nn.Conv2d(in_c, 256, 1),
-            nn.GELU(),
-            nn.Conv2d(256, 64, 3, padding=1),
-            nn.GELU(),
-            nn.Conv2d(64, 1, 1)
-        )
+def run_inference(img: Image.Image):
+    img = img.convert("RGB")
 
-    def forward(self, x):
-        return self.dec(x)
+    rgb, ela = preprocess(img)
 
+    output = model.predict(rgb, ela)
 
-# =========================
-# MAIN MODEL
-# =========================
-class ForgeryDetector(nn.Module):
-    def __init__(self):
-        super().__init__()
+    prob_real = float(output[0][0].item())
+    prob_fake = float(output[0][1].item())
 
-        backbone = models.efficientnet_b0(weights=None)
+    pred = 1 if prob_fake > THRESHOLD else 0
 
-        self.rgb_features = backbone.features
-        self.rgb_pool = nn.AdaptiveAvgPool2d(1)
-
-        self.ela_stream = ELAStream(256)
-        self.mask_decoder = MaskDecoder(1280)
-
-        self.classifier = nn.Sequential(
-            nn.Dropout(0.4),
-            nn.Linear(1280 + 256, 512),
-            nn.GELU(),
-            nn.BatchNorm1d(512),
-
-            nn.Dropout(0.2),
-            nn.Linear(512, 128),
-            nn.GELU(),
-
-            nn.Linear(128, 2)
-        )
-
-    def forward(self, rgb, ela):
-        fm = self.rgb_features(rgb)
-
-        rgb_feat = self.rgb_pool(fm).flatten(1)
-        ela_feat = self.ela_stream(ela)
-
-        x = torch.cat([rgb_feat, ela_feat], dim=1)
-
-        return self.classifier(x)
+    return rgb, ela, prob_real, prob_fake, pred, img
 
 
 # =========================
-# MODEL LOADER (ROBUST)
+# Grad-CAM helper
 # =========================
-class ModelLoader:
-    def __init__(self, model_path: str):
-        self.device = "cpu"
+def run_explain(rgb, ela, orig_img):
+    target_layer = model.model.rgb_features[-1]
 
-        self.model = ForgeryDetector().to(self.device)
+    wrapped_model = WrapperModel(model.model, ela)
 
-        checkpoint = torch.load(model_path, map_location=self.device)
+    cam = GradCAM(
+        model=wrapped_model,
+        target_layers=[target_layer]
+    )
 
-        if isinstance(checkpoint, dict):
-            if "model_state_dict" in checkpoint:
-                state = checkpoint["model_state_dict"]
-            elif "state_dict" in checkpoint:
-                state = checkpoint["state_dict"]
-            else:
-                state = checkpoint
-        else:
-            raise ValueError("Invalid checkpoint format")
+    grayscale_cam = cam(input_tensor=rgb)[0]
 
-        self.model.load_state_dict(state, strict=True)
-        self.model.eval()
+    img_resized = orig_img.resize((224, 224))
+    img_np = np.array(img_resized) / 255.0
 
-    def predict(self, rgb, ela):
-        with torch.no_grad():
-            logits = self.model(rgb, ela)
-            probs = torch.softmax(logits, dim=1)
+    visualization = show_cam_on_image(
+        img_np.astype(np.float32),
+        grayscale_cam,
+        use_rgb=True
+    )
 
-        return probs
+    _, buffer = cv2.imencode(".jpg", visualization)
+    explanation = base64.b64encode(buffer).decode("utf-8")
+
+    return explanation
+
+
+# =========================
+# Health check
+# =========================
+@app.get("/")
+def health():
+    return {
+        "status": "running",
+        "message": "Forgery Detection API is live"
+    }
+
+
+# =========================
+# 1. Detect only
+# =========================
+@app.post("/detect")
+async def detect(file: UploadFile = File(...)):
+    try:
+        img = Image.open(file.file)
+
+        _, _, prob_real, prob_fake, pred, _ = run_inference(img)
+
+        return {
+            "prediction": int(pred),
+            "prob_fake": prob_fake,
+            "prob_real": prob_real,
+            "threshold_used": THRESHOLD
+        }
+
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# =========================
+# 3. Detect + Explain
+# =========================
+@app.post("/detect-explain")
+async def detect_explain(file: UploadFile = File(...)):
+    try:
+        img = Image.open(file.file)
+
+        rgb, ela, prob_real, prob_fake, pred, orig_img = run_inference(img)
+
+        explanation = run_explain(rgb, ela, orig_img)
+
+        return {
+            "prediction": int(pred),
+            "prob_fake": prob_fake,
+            "prob_real": prob_real,
+            "threshold_used": THRESHOLD,
+            "explanation": explanation
+        }
+
+    except Exception as e:
+        return {"error": str(e)}
