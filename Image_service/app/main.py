@@ -11,20 +11,14 @@ from pytorch_grad_cam.utils.image import show_cam_on_image
 from app.model import ModelLoader
 from app.utils import preprocess
 
-
 app = FastAPI(title="Forgery Detection API")
 
 model = None
-
-# =========================
-# FIXED threshold (temporary)
-# (better: calibrate later)
-# =========================
 THRESHOLD = 0.384
 
 
 # =========================
-# WRAPPER FOR GRAD-CAM
+# Wrapper for Grad-CAM
 # =========================
 class WrapperModel(torch.nn.Module):
     def __init__(self, model, ela):
@@ -37,67 +31,77 @@ class WrapperModel(torch.nn.Module):
 
 
 # =========================
-# LOAD MODEL
+# Load model once
 # =========================
 @app.on_event("startup")
 def load_model():
     global model
     print("🚀 Loading model...")
     model = ModelLoader("/app/model.pth")
-    print("✅ Model loaded")
+    print("✅ Model loaded successfully")
 
 
 # =========================
-# INFERENCE
+# Shared inference
 # =========================
 def run_inference(img: Image.Image):
+    img = img.convert("RGB")
+
     rgb, ela = preprocess(img)
 
-    probs = model.predict(rgb, ela)
+    output = model.predict(rgb, ela)
 
-    prob_real = float(probs[0, 0])
-    prob_fake = float(probs[0, 1])
+    prob_real = float(output[0][0].item())
+    prob_fake = float(output[0][1].item())
 
-    pred = int(prob_fake > THRESHOLD)
+    pred = 1 if prob_fake > THRESHOLD else 0
 
     return rgb, ela, prob_real, prob_fake, pred, img
 
 
 # =========================
-# GRAD-CAM
+# Grad-CAM helper
 # =========================
 def run_explain(rgb, ela, orig_img):
     target_layer = model.model.rgb_features[-1]
 
-    wrapped = WrapperModel(model.model, ela)
+    wrapped_model = WrapperModel(model.model, ela)
 
-    cam = GradCAM(model=wrapped, target_layers=[target_layer])
+    cam = GradCAM(
+        model=wrapped_model,
+        target_layers=[target_layer]
+    )
 
-    grayscale = cam(input_tensor=rgb)[0]
+    grayscale_cam = cam(input_tensor=rgb)[0]
 
     img_resized = orig_img.resize((224, 224))
     img_np = np.array(img_resized) / 255.0
 
-    viz = show_cam_on_image(
+    visualization = show_cam_on_image(
         img_np.astype(np.float32),
-        grayscale,
+        grayscale_cam,
         use_rgb=True
     )
 
-    _, buffer = cv2.imencode(".jpg", viz)
-    return base64.b64encode(buffer).decode()
+    _, buffer = cv2.imencode(".jpg", visualization)
+    explanation = base64.b64encode(buffer).decode("utf-8")
+
+    return explanation
 
 
 # =========================
-# HEALTH CHECK
+# Health check
 # =========================
 @app.get("/")
 def health():
-    return {"status": "ok", "message": "Forgery API running"}
+    return {
+        "status": "running",
+        "message": "Forgery Detection API is live"
+    }
 
 
 # =========================
-# DETECT
+# 1. Detect only
 # =========================
 @app.post("/detect")
 async def detect(file: UploadFile = File(...)):
@@ -107,10 +111,10 @@ async def detect(file: UploadFile = File(...)):
         _, _, prob_real, prob_fake, pred, _ = run_inference(img)
 
         return {
-            "prediction": pred,
+            "prediction": int(pred),
             "prob_fake": prob_fake,
             "prob_real": prob_real,
-            "threshold": THRESHOLD
+            "threshold_used": THRESHOLD
         }
 
     except Exception as e:
@@ -118,22 +122,22 @@ async def detect(file: UploadFile = File(...)):
 
 
 # =========================
-# DETECT + EXPLAIN
+# 3. Detect + Explain
 # =========================
 @app.post("/detect-explain")
 async def detect_explain(file: UploadFile = File(...)):
     try:
         img = Image.open(file.file)
 
-        rgb, ela, prob_real, prob_fake, pred, orig = run_inference(img)
+        rgb, ela, prob_real, prob_fake, pred, orig_img = run_inference(img)
 
-        explanation = run_explain(rgb, ela, orig)
+        explanation = run_explain(rgb, ela, orig_img)
 
         return {
-            "prediction": pred,
+            "prediction": int(pred),
             "prob_fake": prob_fake,
             "prob_real": prob_real,
-            "threshold": THRESHOLD,
+            "threshold_used": THRESHOLD,
             "explanation": explanation
         }
 
