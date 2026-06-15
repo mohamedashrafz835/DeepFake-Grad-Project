@@ -14,7 +14,7 @@ from app.utils import preprocess
 app = FastAPI(title="Forgery Detection API")
 
 model = None
-THRESHOLD = 0.384
+THRESHOLD = 0.34
 
 
 # =========================
